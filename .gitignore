@@ -1,0 +1,20 @@
+# --- Python ---
+__pycache__/
+*.pyc
+*.pyo
+*.spec
+
+# --- PyInstaller / Inno Setup output (lo genera CI en cada tag) ---
+build/
+dist/
+
+# --- IDEs ---
+.vscode/
+.idea/
+.claude/
+
+# --- Misc ---
+.DS_Store
+Thumbs.db
+Ej*.rar
+*.log

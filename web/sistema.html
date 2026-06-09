@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Sistema estructural · E.030 (2026)</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="styles.css" />
+  <script>
+    try { document.documentElement.setAttribute('data-theme', localStorage.getItem('e030-theme') || 'light'); } catch (e) {}
+  </script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <style>
+    .pie-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 22px; margin-top: 4px; }
+    .pie-col { text-align: center; }
+    .pie-col h3 { font-size: 15px; font-weight: 800; margin-bottom: 8px; }
+    .pie-col canvas { max-height: 240px; }
+    .pie-info { margin-top: 10px; font-size: 13px; }
+    .pie-info .sis { font-size: 16px; font-weight: 900; }
+    .pie-info .r0 { display:inline-block; margin:6px 0; padding:3px 12px; border-radius:999px;
+                    background: var(--brand-soft); color: var(--brand); font-weight: 800; }
+    .se-estado { color: var(--muted); font-size: 13px; margin-top: 10px; min-height: 18px; }
+    @media (max-width: 720px) { .pie-grid { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+
+<div class="app">
+
+  <!-- ================= SIDEBAR ================= -->
+  <aside class="sidebar">
+    <div class="side-brand">
+      <span class="mk">〰</span><b>ESPECTRA</b>
+    </div>
+    <div class="side-label">Análisis</div>
+    <nav class="nav">
+      <a href="index.html"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v6c0 1.7 3.6 3 8 3s8-1.3 8-3V5M4 11v6c0 1.7 3.6 3 8 3s8-1.3 8-3v-6"/></svg>Datos</a>
+      <a href="masa.html"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>Masa participativa</a>
+      <a href="derivas.html"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="m3 17 6-6 4 4 8-8M21 7v6h-6"/></svg>Derivas</a>
+      <a href="irregularidades.html"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="m10.3 3.6-8 13.9A2 2 0 0 0 4 20.5h16a2 2 0 0 0 1.7-3L13.7 3.6a2 2 0 0 0-3.4 0z"/><path d="M12 9v4M12 17h.01"/></svg>Irregularidades</a>
+      <a href="sistema.html" class="active"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21h18M6 21V8M10 21V8M14 21V8M18 21V8M4 8h16l-8-5z"/></svg>Sistema estructural</a>
+      <a href="escalamiento.html"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="M21 4H14M10 4H3M21 12H12M8 12H3M21 20H16M12 20H3M14 2v4M8 10v4M16 18v4"/></svg>Escalamiento sísmico</a>
+      <a href="junta.html"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="M9 3v18M15 3v18M9 8H4M9 14H4M20 8h-5M20 14h-5"/></svg>Junta sísmica</a>
+      <a href="memoria.html"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M8 13h8M8 17h5"/></svg>Memoria de cálculo</a>
+    </nav>
+
+    <div class="side-label">Autor</div>
+    <button class="nav-author" id="btnAutor" title="Ver perfil del autor">
+      <span class="av">A</span>
+      <span class="info"><b>Autor</b><span>Ver perfil del autor</span></span>
+    </button>
+    <div class="side-foot">
+      <div class="side-promo">
+        <span class="crown"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M2 19h20l-1.8-10.5-5.2 4-3-6-3 6-5.2-4z"/></svg></span>
+        <b>Versión Pro</b>
+        <p>Derivas, junta sísmica y memoria automática.</p>
+        <a href="#" id="btnPro">→ Hazte Pro</a>
+      </div>
+      <div class="side-label" style="padding-top:0">Sesión</div>
+      <div class="side-user" title="Usuario que inició sesión">
+        <span class="av av-on">A</span>
+        <span class="info"><b>admin</b><span>admin_sismox@gmail.com</span></span>
+      </div>
+    </div>
+  </aside>
+
+  <!-- ================= MAIN ================= -->
+  <div class="main">
+
+    <header class="topbar">
+      <button class="ham" id="sidebarToggle" aria-label="Menú"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 3v18"/></svg></button>
+      <nav class="topnav">
+        <a href="sistema.html" class="active">Sistema estructural</a>
+        <a href="index.html">Generador de espectro</a>
+      </nav>
+      <div class="top-actions">
+        <div class="api-status" id="apiStatus" title="Estado de la API ETABS">
+          <span class="dot" id="apiDot"></span>
+          <span id="apiText">ETABS: sin conexión</span>
+        </div>
+        <a class="icon-btn" id="btnDescargar" href="/descargar" download="ESPECTRA-Setup.exe" title="Descargar el puente para ETABS" aria-label="Descargar instalador">
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/></svg>
+        </a>
+        <button class="icon-btn" id="btnTheme" title="Cambiar tema" aria-label="Tema oscuro">
+          <svg class="ic-moon" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.8A9 9 0 1 1 11.2 3 7 7 0 0 0 21 12.8z"/></svg>
+          <svg class="ic-sun" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>
+        </button>
+        <span class="top-av">A</span>
+      </div>
+    </header>
+
+    <main class="content">
+
+      <!-- Cálculo -->
+      <section class="card">
+        <div class="card-head"><h2>Sistema estructural · Art. 20 (Tabla N° 8)</h2></div>
+        <label class="field">
+          <span>Nivel a revisar</span>
+          <select id="nivel"><option value="">Piso base (automático)</option></select>
+        </label>
+        <p class="se-estado">Con albañilería en una dirección, R₀ = 3 (Art. 22.2). El péndulo invertido (Art. 22.3) se marca por dirección bajo cada gráfico.</p>
+        <div class="actions">
+          <button class="btn btn-brand" id="btnCalcular">Calcular sistema estructural</button>
+        </div>
+        <p class="se-estado" id="estado"></p>
+      </section>
+
+      <!-- Resultados -->
+      <section class="card hidden" id="resultados">
+        <div class="card-head"><h2>Resultado por dirección</h2></div>
+        <div class="pie-grid">
+          <div class="pie-col">
+            <h3>Dirección X</h3>
+            <canvas id="pieX"></canvas>
+            <div class="pie-info" id="infoX"></div>
+            <label class="check" style="justify-content:center;margin-top:8px">
+              <input type="checkbox" id="penduloX" /><span>Péndulo invertido (Art. 22.3) → R₀=2.5</span>
+            </label>
+          </div>
+          <div class="pie-col">
+            <h3>Dirección Y</h3>
+            <canvas id="pieY"></canvas>
+            <div class="pie-info" id="infoY"></div>
+            <label class="check" style="justify-content:center;margin-top:8px">
+              <input type="checkbox" id="penduloY" /><span>Péndulo invertido (Art. 22.3) → R₀=2.5</span>
+            </label>
+          </div>
+        </div>
+        <table class="u-table" id="tablaDetalle" style="margin-top:18px">
+          <thead>
+            <tr><th>Caso</th><th>Dir.</th><th>V muros</th><th>V base</th><th>% muros</th><th>Sistema</th><th>R₀</th></tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </section>
+
+      <!-- Tabla N° 8 (referencia) -->
+      <section class="card">
+        <div class="card-head"><h2>Tabla N° 8 · Sistemas estructurales</h2></div>
+        <table class="u-table s-table">
+          <thead>
+            <tr><th>Material</th><th>Sistema estructural</th><th>Descripción</th></tr>
+          </thead>
+          <tbody>
+            <tr><td class="grp" colspan="3">Concreto armado (E.060)</td></tr>
+            <tr><td class="left" rowspan="4">Concreto armado</td><td class="left"><b>Pórticos</b></td><td class="left">Al menos el 80 % de la fuerza cortante en la base actúa sobre las columnas de los pórticos. Si hay muros, se diseñan para resistir una fracción según su rigidez.</td></tr>
+            <tr><td class="left"><b>Muros estructurales</b></td><td class="left">La resistencia sísmica está dada predominantemente por muros dúctiles sobre los que actúa al menos el 70 % de la fuerza cortante en la base.</td></tr>
+            <tr><td class="left"><b>Dual</b></td><td class="left">Combinación de pórticos y muros. La cortante que toman los muros es mayor que 20 % y menor que 70 % del cortante en la base.</td></tr>
+            <tr><td class="left"><b>Muros de ductilidad limitada (EMDL)</b></td><td class="left">Alta densidad de muros de concreto (&gt;2.5 % por piso) de espesor reducido (mín. 10 cm), sin extremos confinados y refuerzo en una sola capa. Máximo 5 pisos.</td></tr>
+
+            <tr><td class="grp" colspan="3">Acero (E.090)</td></tr>
+            <tr><td class="left" rowspan="6">Acero</td><td class="left"><b>SMF</b> - Pórticos especiales resistentes a momentos</td><td class="left">Alta capacidad de deformación inelástica por fluencia en flexión de vigas; columna fuerte–viga débil.</td></tr>
+            <tr><td class="left"><b>IMF</b> - Pórticos intermedios resistentes a momentos</td><td class="left">Limitada capacidad de deformación inelástica en elementos y conexiones.</td></tr>
+            <tr><td class="left"><b>OMF</b> - Pórticos ordinarios resistentes a momentos</td><td class="left">Mínima capacidad de deformación inelástica en elementos y conexiones.</td></tr>
+            <tr><td class="left"><b>SCBF</b> - Pórticos especiales concéntricamente arriostrados</td><td class="left">Alta capacidad inelástica por resistencia post-pandeo en arriostres a compresión y fluencia a tracción.</td></tr>
+            <tr><td class="left"><b>OCBF</b> - Pórticos ordinarios concéntricamente arriostrados</td><td class="left">Limitada capacidad de deformación inelástica en elementos y conexiones.</td></tr>
+            <tr><td class="left"><b>EBF</b> - Pórticos excéntricamente arriostrados</td><td class="left">Alta capacidad inelástica principalmente por fluencia en flexión o corte en la zona entre arriostres.</td></tr>
+
+            <tr><td class="left">Albañilería</td><td class="left">Muros de albañilería</td><td class="left">Elementos sismorresistentes a base de unidades de arcilla o concreto (E.070). No se diferencia entre confinada y armada.</td></tr>
+            <tr><td class="left">Madera</td><td class="left">Estructuras de madera</td><td class="left">Elementos sismorresistentes principalmente a base de madera (E.010).</td></tr>
+            <tr><td class="left">Tierra</td><td class="left">Muros de tierra</td><td class="left">Muros de albañilería de tierra o tierra apisonada in situ (E.080).</td></tr>
+          </tbody>
+        </table>
+      </section>
+
+    </main>
+  </div>
+</div>
+
+<div class="toast-container" id="toasts"></div>
+<script src="sistema.js"></script>
+</body>
+</html>

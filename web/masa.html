@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Masa participativa · E.030 (2026)</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="styles.css" />
+  <script>
+    try { document.documentElement.setAttribute('data-theme', localStorage.getItem('e030-theme') || 'light'); } catch (e) {}
+  </script>
+  <style>
+    .se-estado { color: var(--muted); font-size: 13px; margin-top: 10px; min-height: 18px; }
+    .resumen { display: flex; gap: 18px; flex-wrap: wrap; margin: 6px 0 14px; }
+    .chip { padding: 8px 14px; border-radius: 12px; border: 1px solid var(--border); font-weight: 700; }
+    .chip.ok { background: rgba(22,163,74,.12); color: var(--green); }
+    .chip.no { background: rgba(220,38,38,.12); color: var(--red); }
+    tr.fund { background: var(--brand-soft); }
+  </style>
+</head>
+<body>
+
+<div class="app">
+  <aside class="sidebar">
+    <div class="side-brand"><span class="mk">〰</span><b>ESPECTRA</b></div>
+    <div class="side-label">Análisis</div>
+    <nav class="nav">
+      <a href="index.html"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v6c0 1.7 3.6 3 8 3s8-1.3 8-3V5M4 11v6c0 1.7 3.6 3 8 3s8-1.3 8-3v-6"/></svg>Datos</a>
+      <a href="masa.html" class="active"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>Masa participativa</a>
+      <a href="derivas.html"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="m3 17 6-6 4 4 8-8M21 7v6h-6"/></svg>Derivas</a>
+      <a href="irregularidades.html"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="m10.3 3.6-8 13.9A2 2 0 0 0 4 20.5h16a2 2 0 0 0 1.7-3L13.7 3.6a2 2 0 0 0-3.4 0z"/><path d="M12 9v4M12 17h.01"/></svg>Irregularidades</a>
+      <a href="sistema.html"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21h18M6 21V8M10 21V8M14 21V8M18 21V8M4 8h16l-8-5z"/></svg>Sistema estructural</a>
+      <a href="escalamiento.html"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="M21 4H14M10 4H3M21 12H12M8 12H3M21 20H16M12 20H3M14 2v4M8 10v4M16 18v4"/></svg>Escalamiento sísmico</a>
+      <a href="junta.html"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="M9 3v18M15 3v18M9 8H4M9 14H4M20 8h-5M20 14h-5"/></svg>Junta sísmica</a>
+      <a href="memoria.html"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M8 13h8M8 17h5"/></svg>Memoria de cálculo</a>
+    </nav>
+    <div class="side-label">Autor</div>
+    <button class="nav-author" id="btnAutor" title="Ver perfil del autor"><span class="av">A</span><span class="info"><b>Autor</b><span>Ver perfil del autor</span></span></button>
+    <div class="side-foot">
+      <div class="side-promo">
+        <span class="crown"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M2 19h20l-1.8-10.5-5.2 4-3-6-3 6-5.2-4z"/></svg></span>
+        <b>Versión Pro</b><p>Derivas, junta sísmica y memoria automática.</p>
+        <a href="#" id="btnPro">→ Hazte Pro</a>
+      </div>
+      <div class="side-label" style="padding-top:0">Sesión</div>
+      <div class="side-user" title="Usuario que inició sesión"><span class="av av-on">A</span><span class="info"><b>admin</b><span>admin_sismox@gmail.com</span></span></div>
+    </div>
+  </aside>
+
+  <div class="main">
+    <header class="topbar">
+      <button class="ham" id="sidebarToggle" aria-label="Menú"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 3v18"/></svg></button>
+      <nav class="topnav"><a href="masa.html" class="active">Masa participativa</a><a href="index.html">Generador de espectro</a></nav>
+      <div class="top-actions">
+        <div class="api-status" id="apiStatus" title="Estado de la API ETABS"><span class="dot" id="apiDot"></span><span id="apiText">ETABS: sin conexión</span></div>
+        <a class="icon-btn" id="btnDescargar" href="/descargar" download="ESPECTRA-Setup.exe" title="Descargar el puente para ETABS" aria-label="Descargar instalador">
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/></svg>
+        </a>
+        <button class="icon-btn" id="btnTheme" title="Cambiar tema" aria-label="Tema oscuro">
+          <svg class="ic-moon" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.8A9 9 0 1 1 11.2 3 7 7 0 0 0 21 12.8z"/></svg>
+          <svg class="ic-sun" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>
+        </button>
+        <span class="top-av">A</span>
+      </div>
+    </header>
+
+    <main class="content">
+      <section class="card">
+        <div class="card-head"><h2>Masa participativa modal</h2></div>
+        <p style="color:var(--muted);font-size:13px">Relación de masa participante por modo. La Norma E.030 exige que la suma de masas efectivas alcance al menos el <b>90 %</b> en cada dirección.</p>
+        <label class="field"><span>Caso modal</span><select id="caso"><option value="">Leer del modelo</option></select></label>
+        <div class="actions"><button class="btn btn-brand" id="btnCalcular">Leer masa participativa</button></div>
+        <p class="se-estado" id="estado"></p>
+      </section>
+
+      <section class="card hidden" id="resultados">
+        <div class="card-head"><h2>Modos de vibración</h2></div>
+        <table class="u-table" id="tabla">
+          <thead><tr><th>Modo</th><th>Periodo (s)</th><th>UX</th><th>UY</th><th>UZ</th><th>RZ</th><th>ΣUX</th><th>ΣUY</th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </section>
+
+      <section class="card">
+        <div class="card-head"><h2>Artículo 40 · Modos de vibración</h2></div>
+        <p style="font-size:13px"><b>40.1.</b> Los modos de vibración deben determinarse por un procedimiento de análisis que considere apropiadamente las características de rigidez y la distribución de las masas.</p>
+        <p style="font-size:13px"><b>40.2.</b> En cada dirección se consideran aquellos modos de vibración cuya suma de masas efectivas sea por lo menos el <b>90 %</b> de la masa total. Se debe tomar como mínimo los <b>tres primeros modos predominantes</b> en la dirección de análisis.</p>
+      </section>
+    </main>
+  </div>
+</div>
+
+<div class="toast-container" id="toasts"></div>
+<script src="masa.js"></script>
+</body>
+</html>

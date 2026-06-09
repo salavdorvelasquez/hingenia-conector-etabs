@@ -1,0 +1,108 @@
+name: Build & Release ESPECTRA
+
+# Se dispara cuando empujas un tag tipo v1.0.0, v1.0.1, etc.
+# También se puede correr a mano desde la pestaña Actions.
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write  # necesario para que softprops/action-gh-release pueda crear releases
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install pyinstaller comtypes pystray Pillow
+
+      - name: Generate ESPECTRA icon (espectra.ico + espectra.png)
+        run: python installer/make_icon.py
+
+      - name: Build ESPECTRA.exe with PyInstaller
+        shell: powershell
+        run: |
+          pyinstaller --noconfirm --onefile --windowed `
+            --name ESPECTRA `
+            --icon assets/espectra.ico `
+            --add-data "web;web" `
+            --add-data "assets;assets" `
+            --hidden-import comtypes `
+            --collect-submodules comtypes `
+            --collect-submodules pystray `
+            --hidden-import PIL.Image `
+            api/etabs_api.py
+          if (-not (Test-Path "dist/ESPECTRA.exe")) {
+            Write-Error "PyInstaller no generó dist/ESPECTRA.exe"
+            exit 1
+          }
+
+      - name: Install Inno Setup 6
+        run: choco install innosetup -y --no-progress
+
+      - name: Compile ESPECTRA-Setup.exe with Inno Setup
+        shell: powershell
+        run: |
+          $iscc = "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
+          if (-not (Test-Path $iscc)) {
+            Write-Error "ISCC.exe no encontrado en $iscc"
+            exit 1
+          }
+          & $iscc installer/espectra.iss
+          if (-not (Test-Path "dist/ESPECTRA-Setup.exe")) {
+            Write-Error "Inno Setup no generó dist/ESPECTRA-Setup.exe"
+            exit 1
+          }
+
+      - name: Compute file sizes (for the release notes)
+        id: sizes
+        shell: powershell
+        run: |
+          $bridgeSize  = "{0:N1} MB" -f ((Get-Item "dist/ESPECTRA.exe").Length / 1MB)
+          $installerSize = "{0:N1} MB" -f ((Get-Item "dist/ESPECTRA-Setup.exe").Length / 1MB)
+          "bridge=$bridgeSize"       | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          "installer=$installerSize" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+
+      - name: Create GitHub Release with artifacts
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/ESPECTRA.exe
+            dist/ESPECTRA-Setup.exe
+          name: ESPECTRA ${{ github.ref_name }}
+          generate_release_notes: true
+          body: |
+            ## ESPECTRA — Conector ETABS · E.030 (2026)
+
+            Conector local entre la web de Hingenia (`hingenia.com/apps/calculador-estructural/`)
+            y ETABS, vía API COM (`comtypes`). Corre en `127.0.0.1:8731`.
+
+            ### Descargas
+
+            | Archivo | Tamaño | Uso |
+            |---|---|---|
+            | **ESPECTRA-Setup.exe** | ${{ steps.sizes.outputs.installer }} | **Instalador con asistente** (recomendado). Doble clic → instala una sola vez, crea accesos directos y desinstalador. |
+            | ESPECTRA.exe | ${{ steps.sizes.outputs.bridge }} | Puente autocontenido sin instalar. Doble clic y listo (útil para pruebas o portátil). |
+
+            ### Cómo usar
+            1. Descarga **ESPECTRA-Setup.exe** y ejecútalo.
+            2. Abre ETABS y carga un modelo (`.EDB`).
+            3. Abre ESPECTRA desde el menú inicio. Aparece icono en la bandeja.
+            4. En `hingenia.com/apps/calculador-estructural/`, el indicador
+               "Conector" debería pasar a verde en ≤ 5 segundos.
+
+            > Requiere Windows 64-bit + ETABS instalado.
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -1,0 +1,508 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Análisis Sísmico E.030 (2026) · Generador de Espectro</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="styles.css" />
+  <script>
+    // Aplica el tema guardado antes de pintar (evita parpadeo)
+    try { document.documentElement.setAttribute('data-theme', localStorage.getItem('e030-theme') || 'light'); } catch (e) {}
+  </script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <script src="data/zonas_peru.js"></script>
+  <script src="data/mapa_svg.js"></script>
+</head>
+<body>
+
+<div class="app">
+
+  <!-- ================= SIDEBAR ================= -->
+  <aside class="sidebar">
+    <div class="side-brand">
+      <span class="mk">〰</span><b>ESPECTRA</b>
+    </div>
+    <div class="side-label">Análisis</div>
+    <nav class="nav">
+      <a href="#" class="active" data-view="datos"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v6c0 1.7 3.6 3 8 3s8-1.3 8-3V5M4 11v6c0 1.7 3.6 3 8 3s8-1.3 8-3v-6"/></svg>Datos</a>
+      <a href="masa.html"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>Masa participativa</a>
+      <a href="derivas.html"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="m3 17 6-6 4 4 8-8M21 7v6h-6"/></svg>Derivas</a>
+      <a href="irregularidades.html"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="m10.3 3.6-8 13.9A2 2 0 0 0 4 20.5h16a2 2 0 0 0 1.7-3L13.7 3.6a2 2 0 0 0-3.4 0z"/><path d="M12 9v4M12 17h.01"/></svg>Irregularidades</a>
+      <a href="sistema.html"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21h18M6 21V8M10 21V8M14 21V8M18 21V8M4 8h16l-8-5z"/></svg>Sistema estructural</a>
+      <a href="escalamiento.html"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="M21 4H14M10 4H3M21 12H12M8 12H3M21 20H16M12 20H3M14 2v4M8 10v4M16 18v4"/></svg>Escalamiento sísmico</a>
+      <a href="junta.html"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="M9 3v18M15 3v18M9 8H4M9 14H4M20 8h-5M20 14h-5"/></svg>Junta sísmica</a>
+      <a href="memoria.html"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M8 13h8M8 17h5"/></svg>Memoria de cálculo</a>
+    </nav>
+
+    <div class="side-label">Autor</div>
+    <button class="nav-author" id="btnAutor" title="Ver perfil del autor">
+      <span class="av">A</span>
+      <span class="info"><b>Autor</b><span>Ver perfil del autor</span></span>
+    </button>
+    <div class="side-foot">
+      <div class="side-promo">
+        <span class="crown"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M2 19h20l-1.8-10.5-5.2 4-3-6-3 6-5.2-4z"/></svg></span>
+        <b>Versión Pro</b>
+        <p>Derivas, junta sísmica y memoria automática.</p>
+        <a href="#" id="btnPro">→ Hazte Pro</a>
+      </div>
+      <div class="side-label" style="padding-top:0">Sesión</div>
+      <div class="side-user" title="Usuario que inició sesión">
+        <span class="av av-on">A</span>
+        <span class="info"><b>admin</b><span>admin_sismox@gmail.com</span></span>
+      </div>
+    </div>
+  </aside>
+
+  <!-- ================= MAIN ================= -->
+  <div class="main">
+
+    <header class="topbar">
+      <button class="ham" id="sidebarToggle" aria-label="Menú"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 3v18"/></svg></button>
+      <nav class="topnav">
+        <a href="#" class="active">Datos</a>
+        <a href="#">E.030 · 2026</a>
+      </nav>
+      <div class="top-actions">
+        <div class="api-status" id="apiStatus" title="Estado de la API ETABS">
+          <span class="dot" id="apiDot"></span>
+          <span id="apiText">ETABS: sin conexión</span>
+        </div>
+        <a class="icon-btn" id="btnDescargar" href="/descargar" download="ESPECTRA-Setup.exe" title="Descargar el puente para ETABS" aria-label="Descargar instalador">
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/></svg>
+        </a>
+        <button class="icon-btn" id="btnTheme" title="Cambiar tema" aria-label="Tema oscuro">
+          <svg class="ic-moon" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.8A9 9 0 1 1 11.2 3 7 7 0 0 0 21 12.8z"/></svg>
+          <svg class="ic-sun" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>
+        </button>
+        <span class="top-av">A</span>
+      </div>
+    </header>
+
+    <main class="content">
+
+     <div id="viewDatos">
+      <div class="grid">
+
+        <!-- ================= PANEL DE PARÁMETROS ================= -->
+        <section class="card panel">
+          <div class="card-head">
+            <h2>Parámetros</h2>
+            <button class="icon-btn" id="btnAjustes" title="Ajustes de modos de vibración" aria-label="Ajustes"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.9.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.9 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.9l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.9.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.9-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.9V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg></button>
+          </div>
+
+          <label class="field">
+            <span>Zona Sísmica</span>
+            <div class="zona-row">
+              <button type="button" class="map-btn" id="btnMapa" title="Seleccionar por ubicación (mapa del Perú)"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0z"/><circle cx="12" cy="10" r="3"/></svg></button>
+              <select id="zona">
+                <option value="Z4">Z4 - 0.45</option>
+                <option value="Z3">Z3 - 0.35</option>
+                <option value="Z2">Z2 - 0.25</option>
+                <option value="Z1">Z1 - 0.10</option>
+              </select>
+            </div>
+          </label>
+
+          <label class="field">
+            <span>Categoría de Uso</span>
+            <div class="zona-row">
+              <button type="button" class="map-btn" id="btnTablaU" title="Ver Tabla N° 7 - Categoría y factor U"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21h18M6 21V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v17M14 21V9h3a1 1 0 0 1 1 1v11"/><path d="M9 7h2M9 11h2M9 15h2"/></svg></button>
+              <select id="uso">
+                <option value="Categoría A2">Categoría A2 - U=1.50</option>
+                <option value="Categoría B">Categoría B - U=1.30</option>
+                <option value="Categoría C">Categoría C - U=1.00</option>
+                <option value="Art. 19.3">Art. 19.3 - U=0.80</option>
+              </select>
+            </div>
+          </label>
+
+          <label class="field">
+            <span>Perfil de Suelo</span>
+            <div class="zona-row">
+              <button type="button" class="map-btn" id="btnTablaS" title="Ver Tablas N° 4 y N° 5 - Parámetros de sitio (S, Tp, Tl)"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2 2 7l10 5 10-5-10-5z"/><path d="M2 12l10 5 10-5M2 17l10 5 10-5"/></svg></button>
+              <select id="suelo">
+                <option value="S0">S0 - Roca dura</option>
+                <option value="S1">S1 - Roca / suelo muy rígido</option>
+                <option value="S2" selected>S2 - Suelo intermedio</option>
+                <option value="S3">S3 - Suelo blando</option>
+                <option value="S4">S4 - Condiciones excepcionales</option>
+              </select>
+            </div>
+          </label>
+
+          <div class="field vs30-block" id="vs30Block">
+            <label class="check">
+              <input type="checkbox" id="chkVs30" />
+              <span>Cuenta con Vs30 (interpolar S, Tp, Tl)</span>
+            </label>
+            <div id="vs30Input" class="hidden">
+              <span class="vs30-label">Vs30 (m/s)</span>
+              <input type="number" id="vs30" value="450" step="10" min="0" />
+            </div>
+          </div>
+
+          <label class="field hidden" id="tsBlock">
+            <span>Ts -
+              período fundamental de la estructura (s)</span>
+            <input type="number" id="ts" value="0.30" step="0.01" min="0" />
+          </label>
+
+          <div class="warn-box hidden" id="avisoZ4"></div>
+
+          <div class="field-group">
+            <div class="group-head">
+              <span class="group-title">Sistemas estructurales · R₀</span>
+              <button type="button" class="map-btn sm" id="btnTablaR" title="Ver Tabla N° 10 - Sistemas estructurales y R₀"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21h18M6 21V8M10 21V8M14 21V8M18 21V8M4 8h16l-8-5z"/></svg></button>
+            </div>
+            <div class="field-row">
+              <label class="field"><span>Ro X</span><input type="number" id="roX" value="8" step="0.5" min="0.1" /></label>
+              <label class="field"><span>Ro Y</span><input type="number" id="roY" value="8" step="0.5" min="0.1" /></label>
+            </div>
+          </div>
+
+          <div class="field-group">
+            <div class="group-head">
+              <span class="group-title">Irregularidades · Iₐ, Iₚ</span>
+              <button type="button" class="map-btn sm" id="btnTablaIrr" title="Ver Tablas N° 11 y N° 12 - Factores de irregularidad"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="m10.3 3.6-8 13.9A2 2 0 0 0 4 20.5h16a2 2 0 0 0 1.7-3L13.7 3.6a2 2 0 0 0-3.4 0z"/><path d="M12 9v4M12 17h.01"/></svg></button>
+            </div>
+            <div class="field-row">
+              <label class="field"><span>Ia (altura)</span><input type="number" id="ia" value="1" step="0.05" min="0.1" max="1" /></label>
+              <label class="field"><span>Ip (planta)</span><input type="number" id="ip" value="1" step="0.05" min="0.1" max="1" /></label>
+            </div>
+          </div>
+
+          <div class="actions" style="display:flex;gap:10px">
+            <button class="btn btn-brand" id="btnEtabs" style="flex:1">Cargar</button>
+            <button class="btn btn-soft" id="btnActualizar" style="flex:1">Actualizar</button>
+            <button class="btn btn-ghost" id="btnBorrar" title="Borrar todos los datos" aria-label="Borrar datos" style="flex:0 0 auto;padding:0 14px"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M10 11v6M14 11v6"/></svg></button>
+          </div>
+        </section>
+
+        <!-- ================= GRÁFICO ================= -->
+        <section class="card plot-area">
+          <div class="card-head">
+            <h2>Espectro elástico</h2>
+            <div class="plot-tools">
+              <div class="curve-toggle" id="curveToggle">
+                <button type="button" data-curve="C" data-group="base">C</button>
+                <button type="button" data-curve="ZUCS" data-group="base" class="active">ZUCS</button>
+                <button type="button" data-curve="ZUCS/RX" class="active">ZUCS/Rx</button>
+                <button type="button" data-curve="ZUCS/RY" class="active">ZUCS/Ry</button>
+              </div>
+              <button class="icon-btn" id="btnExport" title="Descargar TXT"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg></button>
+            </div>
+          </div>
+          <div class="plot-card">
+            <canvas id="chart"></canvas>
+            <div class="plot-empty hidden" id="plotEmpty">Requiere Análisis Específico</div>
+          </div>
+          <div class="plot-footer" id="plotFooter"></div>
+        </section>
+
+      </div>
+     </div><!-- /viewDatos -->
+
+     <!-- Vista "en desarrollo" para secciones aún no implementadas -->
+     <div id="viewDev" class="hidden dev-view">
+       <div class="dev-card">
+         <div class="dev-ic"><svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a4 4 0 0 0-5.4 5.4L3 18v3h3l6.3-6.3a4 4 0 0 0 5.4-5.4l-2.6 2.6-2-2 2.6-2.6z"/></svg></div>
+         <h2 id="devTitle">Sección</h2>
+         <p>Esta funcionalidad se encuentra <b>en desarrollo</b>. Pronto estará disponible.</p>
+         <button class="btn btn-soft" id="btnVolverDatos">← Volver a Datos</button>
+       </div>
+     </div>
+    </main>
+  </div>
+</div>
+
+<!-- ================= MODAL DE AJUSTES ================= -->
+<div class="modal-overlay hidden" id="modalAjustes">
+  <div class="modal">
+    <h3>Ajustes de Modos de Vibración</h3>
+    <label class="field">
+      <span>Modos Máximos</span>
+      <input type="number" id="modosMax" value="9" min="1" />
+    </label>
+    <label class="field">
+      <span>Modos Mínimos</span>
+      <input type="number" id="modosMin" value="3" min="1" />
+    </label>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" id="btnCancelAjustes">Cancelar</button>
+      <button class="btn btn-brand" id="btnGuardarAjustes">Guardar</button>
+    </div>
+  </div>
+</div>
+
+<!-- ================= MODAL TABLA N° 10 (Sistemas estructurales y R0) ================= -->
+<div class="modal-overlay hidden" id="modalTablaR">
+  <div class="modal modal-table">
+    <div class="table-head">
+      <h3>Artículo 22 · Sistemas estructurales y coeficiente R₀</h3>
+      <button class="icon-btn" id="btnCerrarTablaR" aria-label="Cerrar"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"/></svg></button>
+    </div>
+    <div class="table-scroll">
+      <div class="table-intro">
+        <p><b>22.1.</b> Los sistemas estructurales se clasifican según los materiales usados y el sistema de estructuración sismorresistente en cada dirección de análisis:</p>
+        <p class="pick-hint">Haz clic en un <b>sistema estructural</b> para asignar su R₀ a ambas direcciones (Ro X y Ro Y).</p>
+      </div>
+      <table class="u-table s-table">
+        <thead>
+          <tr><th colspan="2">Tabla N° 10 · Sistemas estructurales y R₀</th></tr>
+          <tr><th>Sistema estructural</th><th>R₀ (*)</th></tr>
+        </thead>
+        <tbody>
+          <tr><td class="grp" colspan="2">Acero</td></tr>
+          <tr class="pickrow" data-ro="8"><td class="left">Pórticos Especiales Resistentes a Momentos (SMF)</td><td>8</td></tr>
+          <tr class="pickrow" data-ro="5"><td class="left">Pórticos Intermedios Resistentes a Momentos (IMF)</td><td>5</td></tr>
+          <tr class="pickrow" data-ro="4"><td class="left">Pórticos Ordinarios Resistentes a Momentos (OMF)</td><td>4</td></tr>
+          <tr class="pickrow" data-ro="7"><td class="left">Pórticos Especiales Concéntricamente Arriostrados (SCBF)</td><td>7</td></tr>
+          <tr class="pickrow" data-ro="4"><td class="left">Pórticos Ordinarios Concéntricamente Arriostrados (OCBF)</td><td>4</td></tr>
+          <tr class="pickrow" data-ro="8"><td class="left">Pórticos Excéntricamente Arriostrados (EBF)</td><td>8</td></tr>
+          <tr><td class="grp" colspan="2">Concreto armado</td></tr>
+          <tr class="pickrow" data-ro="8"><td class="left">Pórticos</td><td>8</td></tr>
+          <tr class="pickrow" data-ro="7"><td class="left">Dual</td><td>7</td></tr>
+          <tr class="pickrow" data-ro="6"><td class="left">De muros estructurales</td><td>6</td></tr>
+          <tr class="pickrow" data-ro="3.5"><td class="left">Muros de ductilidad limitada</td><td>3.5</td></tr>
+          <tr class="pickrow" data-ro="3"><td class="left">Albañilería Armada o Confinada</td><td>3</td></tr>
+          <tr class="pickrow" data-ro="7"><td class="left">Madera</td><td>7 (**)</td></tr>
+        </tbody>
+      </table>
+      <div class="table-notes">
+        <p><b>(*)</b> Estos coeficientes se aplican únicamente a estructuras en las que los elementos verticales y horizontales permitan la disipación de la energía manteniendo la estabilidad de la estructura.</p>
+        <p><b>(**)</b> Para diseño por esfuerzos admisibles.</p>
+        <p><b>22.2.</b> Cuando en la dirección de análisis la edificación presente más de un sistema estructural, se toma el menor coeficiente R₀ que corresponda.</p>
+        <p><b>22.3.</b> Para estructuras tipo péndulo invertido, se debe usar R₀ = 2.5.</p>
+        <p><b>22.4.</b> No se permite construcciones de tierra en suelos S₄ y S₅.</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ================= MODAL TABLAS N° 11 y N° 12 (Irregularidades) ================= -->
+<div class="modal-overlay hidden" id="modalTablaIrr">
+  <div class="modal modal-table">
+    <div class="table-head">
+      <h3>Artículo 24 · Factores de irregularidad (Iₐ, Iₚ)</h3>
+      <button class="icon-btn" id="btnCerrarTablaIrr" aria-label="Cerrar"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"/></svg></button>
+    </div>
+    <div class="table-scroll">
+      <div class="table-intro">
+        <p class="pick-hint">Haz clic en una <b>irregularidad en altura</b> para asignar su Iₐ, o en una <b>de planta</b> para asignar su Iₚ.</p>
+      </div>
+      <table class="u-table irr-table">
+        <thead>
+          <tr><th colspan="2">Tabla N° 11 · Irregularidades en altura (Iₐ)</th></tr>
+          <tr><th>Irregularidad</th><th>Iₐ</th></tr>
+        </thead>
+        <tbody>
+          <tr class="pickrow" data-ia="0.75"><td><b>Irregularidad de rigidez – Piso blando.</b> En un entrepiso la rigidez lateral es menor que 70 % de la del entrepiso superior, o menor que 80 % del promedio de los 3 niveles superiores. <b>Irregularidad de resistencia – Piso débil:</b> la resistencia de un entrepiso es inferior a 80 % de la del entrepiso superior.</td><td>0,75</td></tr>
+          <tr class="pickrow" data-ia="0.50"><td><b>Irregularidad extrema de rigidez</b> (rigidez &lt; 60 % del superior o &lt; 70 % del promedio) <b>e irregularidad extrema de resistencia</b> (&lt; 65 % del superior). <i>(Tabla N° 13)</i></td><td>0,50</td></tr>
+          <tr class="pickrow" data-ia="0.90"><td><b>Irregularidad de masa o peso.</b> El peso de un piso es mayor que 1,5 veces el de un piso adyacente (no aplica en azoteas ni sótanos).</td><td>0,90</td></tr>
+          <tr class="pickrow" data-ia="0.90"><td><b>Irregularidad geométrica vertical.</b> La dimensión en planta del sistema resistente es mayor que 1,3 veces la de un piso adyacente (no aplica en azoteas ni sótanos).</td><td>0,90</td></tr>
+          <tr class="pickrow" data-ia="0.80"><td><b>Discontinuidad en los sistemas resistentes.</b> Desalineamiento vertical en un elemento que resiste &gt; 10 % del cortante, mayor que 25 % de la dimensión del elemento.</td><td>0,80</td></tr>
+          <tr class="pickrow" data-ia="0.60"><td><b>Discontinuidad extrema de los sistemas resistentes.</b> La fuerza cortante que resisten los elementos discontinuos supera el 25 % del cortante total. <i>(Tabla N° 13)</i></td><td>0,60</td></tr>
+        </tbody>
+      </table>
+
+      <table class="u-table irr-table" style="margin-top:16px">
+        <thead>
+          <tr><th colspan="2">Tabla N° 12 · Irregularidades en planta (Iₚ)</th></tr>
+          <tr><th>Irregularidad</th><th>Iₚ</th></tr>
+        </thead>
+        <tbody>
+          <tr class="pickrow" data-ip="0.75"><td><b>Irregularidad torsional.</b> El máximo desplazamiento relativo de entrepiso en un extremo (incluyendo excentricidad accidental) es mayor que 1,3 veces el promedio de los extremos. Solo en diafragmas rígidos y si Δmáx &gt; 50 % del permisible (Tabla N° 14).</td><td>0,75</td></tr>
+          <tr class="pickrow" data-ip="0.60"><td><b>Irregularidad torsional extrema.</b> Igual que la anterior pero mayor que 1,5 veces el promedio. <i>(Tabla N° 13)</i></td><td>0,60</td></tr>
+          <tr class="pickrow" data-ip="0.90"><td><b>Esquinas entrantes.</b> La estructura tiene esquinas entrantes cuyas dimensiones en ambas direcciones son mayores que 20 % de la dimensión total en planta.</td><td>0,90</td></tr>
+          <tr class="pickrow" data-ip="0.85"><td><b>Discontinuidad del diafragma.</b> Discontinuidades abruptas o aberturas mayores que 50 % del área bruta del diafragma; o sección transversal con área neta resistente menor que 50 % del total.</td><td>0,85</td></tr>
+          <tr class="pickrow" data-ip="0.90"><td><b>Sistemas no paralelos.</b> Los elementos resistentes no son paralelos. No aplica si los ejes forman ángulos &lt; 30° ni si los elementos no paralelos resisten &lt; 10 % del cortante del piso.</td><td>0,90</td></tr>
+        </tbody>
+      </table>
+      <div class="table-notes">
+        <p>El coeficiente de reducción se obtiene como <b>R = R₀ · Iₐ · Iₚ</b> (Art. 26). Iₐ es el menor valor de la Tabla N° 11 e Iₚ el menor de la Tabla N° 12 (Art. 24). En estructuras regulares Iₐ = Iₚ = 1,0.</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ================= MODAL TABLA N° 7 (Categoría / factor U) ================= -->
+<div class="modal-overlay hidden" id="modalTablaU">
+  <div class="modal modal-table">
+    <div class="table-head">
+      <h3>Tabla N° 7 · Categoría de las edificaciones y factor «U»</h3>
+      <button class="icon-btn" id="btnCerrarTablaU" aria-label="Cerrar"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"/></svg></button>
+    </div>
+    <div class="table-scroll">
+      <div class="table-intro">
+        <p class="art"><b>Artículo 19.-</b> Categoría de las edificaciones y factor de uso (<i>U</i>)</p>
+        <p><b>19.1.</b> Cada estructura está clasificada conforme a las categorías establecidas en la Tabla N° 7 de la presente Norma Técnica; el factor de uso o importancia (<i>U</i>) se asigna en función de la categoría correspondiente:</p>
+      </div>
+      <table class="u-table">
+        <thead>
+          <tr><th>Categoría</th><th>Descripción</th><th>Factor U</th></tr>
+        </thead>
+        <tbody>
+          <tr class="pickrow" data-uso="Categoría A2">
+            <td rowspan="2" class="cat"><b>A</b><span>Edificaciones esenciales</span></td>
+            <td><b>A1:</b> Establecimientos del sector salud (públicos y privados) del segundo y tercer nivel, según lo establecido por el Ministerio de Salud.</td>
+            <td class="u"><em>Ver nota</em></td>
+          </tr>
+          <tr class="pickrow" data-uso="Categoría A2">
+            <td><b>A2:</b> Edificaciones esenciales para el manejo de las emergencias, el funcionamiento del gobierno y, en general, aquellas que puedan servir de refugio después de un desastre:
+              <ul>
+                <li>Establecimientos de salud no comprendidos en la categoría A1.</li>
+                <li>Puertos, aeropuertos, estaciones ferroviarias de pasajeros, sistemas masivos de transporte, locales municipales, centrales de comunicaciones.</li>
+                <li>Estaciones de bomberos, cuarteles de las fuerzas armadas y policía.</li>
+                <li>Instalaciones de generación y transformación de electricidad, reservorios y plantas de tratamiento de agua.</li>
+                <li>Instituciones educativas, institutos superiores tecnológicos y universidades.</li>
+                <li>Edificaciones cuyo colapso puede representar un riesgo adicional, tales como grandes hornos, fábricas y depósitos de materiales inflamables o tóxicos.</li>
+                <li>Edificios que almacenen archivos e información esencial del Estado.</li>
+              </ul>
+            </td>
+            <td class="u">1,5</td>
+          </tr>
+          <tr class="pickrow" data-uso="Categoría B">
+            <td class="cat"><b>B</b><span>Edificaciones importantes</span></td>
+            <td>Edificaciones donde se reúnen gran cantidad de personas: cines, teatros, estadios, coliseos, centros comerciales, terminales de pasajeros, establecimientos penitenciarios, o que guardan patrimonios valiosos como museos y bibliotecas. Depósitos de granos y otros almacenes importantes para el abastecimiento.</td>
+            <td class="u">1,3</td>
+          </tr>
+          <tr class="pickrow" data-uso="Categoría C">
+            <td class="cat"><b>C</b><span>Edificaciones comunes</span></td>
+            <td>Edificaciones comunes tales como viviendas, oficinas, hoteles, restaurantes, depósitos e instalaciones industriales cuya falla no acarree peligros adicionales de incendios o fugas de contaminantes.</td>
+            <td class="u">1,0</td>
+          </tr>
+        </tbody>
+      </table>
+      <div class="table-notes">
+        <p><b>Nota:</b> Las nuevas edificaciones de categoría A1 tienen aislamiento sísmico en la base cuando se encuentren en las zonas sísmicas 4 y 3, en cuyo caso debe considerarse U = 1. Para los establecimientos de salud del primer nivel de atención, la entidad responsable puede decidir el uso de aislamiento sísmico. En las zonas sísmicas 1 y 2, la entidad responsable puede decidir si usa o no aislamiento sísmico. Si no se utiliza aislamiento sísmico en las zonas sísmicas 1 y 2, el valor de U es como mínimo 1,5.</p>
+        <p><b>19.2.</b> Para edificaciones con áreas de usos combinados, se debe usar el mayor valor del factor de uso U, siempre que el área correspondiente a dicho uso supere el 15 % del área total de la edificación sin incluir sótanos.</p>
+        <p><b>19.3.</b> Para construcciones provisionales (almacenes de obra, módulos de casetas, entre otras de naturaleza temporal), la determinación del factor de uso U queda bajo responsabilidad del proyectista, quien debe proveer a estas edificaciones la resistencia y rigidez adecuadas frente a acciones laterales.</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ================= MODAL TABLAS N° 4 y N° 5 (Parámetros de sitio) ================= -->
+<div class="modal-overlay hidden" id="modalTablaS">
+  <div class="modal modal-table">
+    <div class="table-head">
+      <h3>Artículo 17 · Parámetros de sitio (S, T<sub>P</sub> y T<sub>L</sub>)</h3>
+      <button class="icon-btn" id="btnCerrarTablaS" aria-label="Cerrar"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"/></svg></button>
+    </div>
+    <div class="table-scroll">
+      <div class="table-intro">
+        <p>Se debe seleccionar el tipo de perfil que mejor describa las condiciones locales, utilizando los valores del factor de amplificación del suelo <b>S</b> y de los períodos <b>T<sub>P</sub></b> y <b>T<sub>L</sub></b> dados en las Tablas N° 4 y N° 5.</p>
+        <p class="pick-hint">Haz clic en un <b>tipo de suelo</b> (S₀ … S₄) para seleccionarlo.</p>
+      </div>
+
+      <table class="u-table s-table">
+        <thead>
+          <tr><th colspan="6">Tabla N° 4 · Factor de suelo «S»</th></tr>
+          <tr><th>Zona \ Suelo</th><th class="pickth" data-suelo="S0">S₀</th><th class="pickth" data-suelo="S1">S₁</th><th class="pickth" data-suelo="S2">S₂ (*)</th><th class="pickth" data-suelo="S3">S₃ (*)</th><th class="pickth" data-suelo="S4">S₄</th></tr>
+        </thead>
+        <tbody>
+          <tr><td class="zc">Z4</td><td>0,80</td><td>1,00</td><td>1,00 – 1,10</td><td>1,10 – 1,20</td><td>Requiere análisis de respuesta de sitio</td></tr>
+          <tr><td class="zc">Z3</td><td>0,80</td><td>1,00</td><td>1,00 – 1,15</td><td>1,15 – 1,20</td><td>1,30</td></tr>
+          <tr><td class="zc">Z2</td><td>0,80</td><td>1,00</td><td>1,00 – 1,30</td><td>1,30 – 1,40</td><td>1,70</td></tr>
+          <tr><td class="zc">Z1</td><td>0,80</td><td>1,00</td><td>1,00 – 1,30</td><td>1,30 – 1,60</td><td>2,40</td></tr>
+        </tbody>
+      </table>
+
+      <table class="u-table s-table" style="margin-top:16px">
+        <thead>
+          <tr><th colspan="6">Tabla N° 5 · Períodos «T<sub>P</sub>» y «T<sub>L</sub>»</th></tr>
+          <tr><th>Período \ Suelo</th><th>S₀</th><th>S₁</th><th>S₂ (*)</th><th>S₃ (*)</th><th>S₄</th></tr>
+        </thead>
+        <tbody>
+          <tr><td class="zc">T<sub>P</sub> (s)</td><td>0,3</td><td>0,4</td><td>0,4 – 0,6</td><td>0,6 – 0,9</td><td>1,2</td></tr>
+          <tr><td class="zc">T<sub>L</sub> (s)</td><td>3,0</td><td>2,5</td><td>2,5 – 2,0</td><td>2,0 – 1,6</td><td>1,6</td></tr>
+        </tbody>
+      </table>
+
+      <div class="table-notes">
+        <p><b>(*)</b> Los valores de S, T<sub>P</sub> y T<sub>L</sub> deben definirse interpolando linealmente entre los extremos del intervalo en función de las velocidades de ondas de corte (Tabla N° 3). En caso no se disponga de la velocidad de ondas de corte (V̄<sub>s30</sub>), se considera el mayor valor del intervalo para «S», y <b>T<sub>P</sub> = 0,6 s, T<sub>L</sub> = 2,0 s</b> para suelos S₂, y <b>T<sub>P</sub> = 0,9 s, T<sub>L</sub> = 1,60 s</b> para suelos S₃.</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ================= MODAL DE UBICACIÓN / MAPA ================= -->
+<div class="modal-overlay hidden" id="modalMapa">
+  <div class="modal modal-map">
+    <h3>Ubicación del proyecto · Zonificación sísmica</h3>
+    <div class="map-wrap">
+      <div class="map-col">
+        <div class="map-fig">
+          <div id="mapaBox" class="mapa-svg-box" aria-label="Mapa interactivo de zonificación sísmica del Perú"></div>
+        </div>
+        <div class="zone-legend" id="mapaLegend">
+          <span data-zone="Z4"><i class="lg z4"></i>Z4 · 0.45</span>
+          <span data-zone="Z3"><i class="lg z3"></i>Z3 · 0.35</span>
+          <span data-zone="Z2"><i class="lg z2"></i>Z2 · 0.25</span>
+          <span data-zone="Z1"><i class="lg z1"></i>Z1 · 0.10</span>
+        </div>
+      </div>
+      <div class="map-form">
+        <label class="field"><span>Departamento</span><select id="selDep"></select></label>
+        <label class="field"><span>Provincia</span><select id="selProv"></select></label>
+        <label class="field"><span>Distrito</span><select id="selDist"></select></label>
+        <div class="zona-result" id="zonaResult">Zona sísmica: -</div>
+      </div>
+    </div>
+    <p class="map-note">Fuente: <b>Anexo II</b> · Norma Técnica E.030 (2026). Zonificación oficial por distrito (1892 distritos).</p>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" id="btnCancelMapa">Cancelar</button>
+      <button class="btn btn-brand" id="btnAplicarMapa">Aplicar zona</button>
+    </div>
+  </div>
+</div>
+
+<!-- ================= MODAL DESCARGAR TXT ================= -->
+<div class="modal-overlay hidden" id="modalExport">
+  <div class="modal modal-export">
+    <h3>Descargar espectro (TXT)</h3>
+    <p class="ex-note">Selecciona las curvas a incluir en el archivo:</p>
+    <div class="ex-list">
+      <label class="check"><input type="checkbox" class="exCurve" value="C" /><span><i class="dot c"></i>C - Factor de amplificación</span></label>
+      <label class="check"><input type="checkbox" class="exCurve" value="ZUCS" checked /><span><i class="dot zucs"></i>ZUCS - Espectro elástico</span></label>
+      <label class="check"><input type="checkbox" class="exCurve" value="ZUCS/RX" checked /><span><i class="dot rx"></i>ZUCS/Rx - Espectro de diseño X</span></label>
+      <label class="check"><input type="checkbox" class="exCurve" value="ZUCS/RY" checked /><span><i class="dot ry"></i>ZUCS/Ry - Espectro de diseño Y</span></label>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" id="btnCancelExport">Cancelar</button>
+      <button class="btn btn-brand" id="btnDescargarTxt">⬇ Descargar TXT</button>
+    </div>
+  </div>
+</div>
+
+<!-- ================= MODAL DE AUTOR ================= -->
+<div class="modal-overlay hidden" id="modalAutor">
+  <div class="modal modal-author">
+    <div class="author-head">
+      <span class="av">A</span>
+      <div>
+        <h3>Abel Max Julcarima Espíritu</h3>
+        <span class="author-role">Ingeniero Civil · Calculista estructural</span>
+      </div>
+    </div>
+    <p class="author-bio">Ingeniero Civil titulado y maestrando en Ingeniería Estructural y Geotécnica en la Pontificia Universidad Católica de Chile, con experiencia en análisis y diseño de edificaciones mediante SAP2000, ETABS y SAFE. Actualmente me desempeño como calculista estructural e instructor, combinando la práctica profesional con el desarrollo de herramientas computacionales en Python, C++ y C# para la automatización de procesos de análisis y diseño estructural. Investigador inscrito en RENACYT, con participación en publicaciones científicas en ingeniería estructural y sísmica.</p>
+    <div class="modal-actions">
+      <button class="btn btn-brand" id="btnCerrarAutor">Cerrar</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast-container" id="toasts"></div>
+
+<script>
+  // Colapsar/expandir sidebar (chrome de interfaz, sin tocar el backend)
+  const app = document.querySelector('.app');
+  document.getElementById('sidebarToggle').addEventListener('click', () => app.classList.toggle('collapsed'));
+</script>
+<script src="app.js"></script>
+</body>
+</html>

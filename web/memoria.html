@@ -1,0 +1,285 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Memoria de cálculo · E.030 (2026)</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="styles.css" />
+  <script>
+    try { document.documentElement.setAttribute('data-theme', localStorage.getItem('e030-theme') || 'light'); } catch (e) {}
+  </script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <script src="https://unpkg.com/html-docx-js/dist/html-docx.js"></script>
+  <script src="data/zonas_peru.js"></script>
+  <script src="data/mapa_svg.js"></script>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css" />
+  <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js"
+          onload="renderMathInElement(document.body, {delimiters:[{left:'$$',right:'$$',display:true},{left:'\\(',right:'\\)',display:false}]})"></script>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/dreampulse/computer-modern-web-font@master/fonts.css" />
+  <style>
+    /* Fuente LaTeX (Computer Modern) para el documento de la memoria */
+    .mem .page, .mem .page table { font-family: "Computer Modern Serif", "Latin Modern Roman", Georgia, serif; }
+    .doc-title { text-align: center; font-size: 20px; font-weight: 700; margin: 0 0 14px; }
+    .mem h3 { font-size: 17px; font-weight: 700; margin: 14px 0 8px; }
+    .mem p { font-size: 14px; line-height: 1.55; margin: 8px 0; text-align: justify; }
+    .mem .cap { text-align:center; font-style: italic; font-size: 13px; color: var(--muted); margin: 14px 0 6px; }
+    .chart-wrap { position: relative; height: 340px; }
+    .se-estado { color: var(--muted); font-size: 13px; margin-top: 10px; min-height: 18px; }
+    .resumen { display: flex; gap: 12px; flex-wrap: wrap; margin: 8px 0 12px; }
+    .resumen .chip { padding: 6px 12px; border-radius: 10px; border: 1px solid var(--border); font-weight: 700; font-size: 13px; }
+    .resumen .chip.ok { background: rgba(22,163,74,.12); color: var(--green); }
+    .resumen .chip.no { background: rgba(220,38,38,.12); color: var(--red); }
+    tr.fund { background: var(--brand-soft); }
+    #avisoVerif { font-family: Inter, sans-serif; border-radius: 12px; padding: 12px 16px; margin-bottom: 18px; font-size: 13px; font-weight: 600; }
+    #avisoVerif.no { background: rgba(220,38,38,.10); color: var(--red); border: 1px solid rgba(220,38,38,.3); }
+    #avisoVerif.ok { background: rgba(22,163,74,.10); color: var(--green); border: 1px solid rgba(22,163,74,.3); }
+    .falta-nota { color: var(--red); font-weight: 700; font-style: italic; }
+    .mapa-mem { max-width: 360px; margin: 0 auto; }
+    .mapa-mem svg { width: 100%; height: auto; }
+    /* Cuadro resumen único (estilo reporte) */
+    .resumen-box { border: 1.5px solid var(--ink); border-radius: 4px; padding: 16px 20px; max-width: 640px; }
+    .rb-title { font-weight: 800; text-decoration: underline; margin: 4px 0 8px; font-size: 14px; }
+    .rb-table { width: 100%; border-collapse: collapse; margin-bottom: 4px; font-size: 13px; }
+    .rb-table td { border: 1px solid var(--ink); padding: 6px 10px; vertical-align: top; }
+    .rb-table td:first-child { width: 55%; }
+    .rb-res { font-size: 13px; line-height: 1.7; }
+    .rb-dir { font-weight: 700; margin: 12px 0 2px; padding-left: 26px; }
+    .rb-line { padding-left: 40px; }
+    /* Gráficos embebidos */
+    .pie-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+    .pie-col { text-align: center; }
+    .pie-col h4 { font-weight: 700; margin-bottom: 6px; }
+    .pie-col .pw { position: relative; height: 240px; }
+    .drift-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+    .drift-cell { border: 1px solid var(--border); border-radius: 12px; padding: 10px; }
+    .drift-cell b { font-size: 13px; }
+    .drift-cell .dw { position: relative; height: 320px; }
+    /* Panel de configuración de colores */
+    .cfg { display: none; gap: 16px; flex-wrap: wrap; align-items: center; margin-top: 12px;
+           padding: 12px 14px; border: 1px solid var(--border); border-radius: 12px; background: var(--bg-soft); }
+    .cfg.show { display: flex; }
+    .cfg label { display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 600; }
+    .cfg input[type=color] { width: 38px; height: 28px; border: none; border-radius: 6px; background: none; cursor: pointer; }
+    /* Documento continuo dentro de UN solo cuadro blanco (como las demás tarjetas) */
+    .preview { background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius);
+               padding: 24px 28px; margin-top: 16px; }
+    .page { margin: 0; padding: 0; background: transparent; box-shadow: none; }
+    .page + .page { margin-top: 34px; }
+    /* Presentación tipo reporte: columna centrada; tablas y figuras acotadas */
+    .mem .page { max-width: 720px; margin-left: auto; margin-right: auto; }
+    .mem .page p { max-width: 720px; }
+    .mem .page table { width: auto; max-width: 100%; margin: 8px auto 4px; font-size: 12px;
+                       border-collapse: collapse; }
+    .mem .page table th, .mem .page table td { padding: 5px 12px; text-align: center; }
+    .mem .page table td.left, .mem .page table th:first-child { text-align: left; }
+    .chart-wrap { max-width: 540px; margin: 8px auto 0; height: 300px; }
+    .pie-grid { max-width: 540px; margin: 0 auto; }
+    .pie-col .pw { height: 190px; }
+    /* Derivas: un gráfico debajo de otro (una sola columna) */
+    .drift-grid { max-width: 500px; margin: 0 auto; grid-template-columns: 1fr; gap: 18px; }
+    .drift-cell { padding: 12px 14px; }
+    .drift-cell .dw { height: 300px; }
+    .resumen { justify-content: center; }
+    /* Modo edición manual del documento */
+    .preview.editando { outline: 2px dashed var(--brand); outline-offset: 6px; }
+    .preview.editando [contenteditable] { cursor: text; }
+    .preview.editando td:hover, .preview.editando p:hover, .preview.editando h3:hover { background: var(--brand-soft); }
+    .preview:focus, .preview *:focus { outline: 1px solid var(--brand); border-radius: 4px; }
+    /* Impresión / PDF: tamaño A4, solo el reporte */
+    @page { size: A4; margin: 1.6cm; }
+    @media print {
+      .sidebar, .topbar, #controles, .toast-container { display: none !important; }
+      .main { margin: 0 !important; }
+      .content.mem { max-width: none !important; padding: 0 !important; }
+      .chart-wrap, .pie-col .pw, .drift-cell, table { break-inside: avoid; }
+      h3 { break-after: avoid; }
+      a[href]:after { content: ""; }
+      .preview.editando { outline: none !important; }
+      .preview *:focus { outline: none !important; }
+    }
+  </style>
+</head>
+<body>
+
+<div class="app">
+  <aside class="sidebar">
+    <div class="side-brand"><span class="mk">〰</span><b>ESPECTRA</b></div>
+    <div class="side-label">Análisis</div>
+    <nav class="nav">
+      <a href="index.html"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v6c0 1.7 3.6 3 8 3s8-1.3 8-3V5M4 11v6c0 1.7 3.6 3 8 3s8-1.3 8-3v-6"/></svg>Datos</a>
+      <a href="masa.html"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>Masa participativa</a>
+      <a href="derivas.html"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="m3 17 6-6 4 4 8-8M21 7v6h-6"/></svg>Derivas</a>
+      <a href="irregularidades.html"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="m10.3 3.6-8 13.9A2 2 0 0 0 4 20.5h16a2 2 0 0 0 1.7-3L13.7 3.6a2 2 0 0 0-3.4 0z"/><path d="M12 9v4M12 17h.01"/></svg>Irregularidades</a>
+      <a href="sistema.html"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21h18M6 21V8M10 21V8M14 21V8M18 21V8M4 8h16l-8-5z"/></svg>Sistema estructural</a>
+      <a href="escalamiento.html"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="M21 4H14M10 4H3M21 12H12M8 12H3M21 20H16M12 20H3M14 2v4M8 10v4M16 18v4"/></svg>Escalamiento sísmico</a>
+      <a href="junta.html"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="M9 3v18M15 3v18M9 8H4M9 14H4M20 8h-5M20 14h-5"/></svg>Junta sísmica</a>
+      <a href="memoria.html" class="active"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M8 13h8M8 17h5"/></svg>Memoria de cálculo</a>
+    </nav>
+    <div class="side-label">Autor</div>
+    <button class="nav-author" id="btnAutor" title="Ver perfil del autor"><span class="av">A</span><span class="info"><b>Autor</b><span>Ver perfil del autor</span></span></button>
+    <div class="side-foot">
+      <div class="side-promo">
+        <span class="crown"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M2 19h20l-1.8-10.5-5.2 4-3-6-3 6-5.2-4z"/></svg></span>
+        <b>Versión Pro</b><p>Derivas, junta sísmica y memoria automática.</p>
+        <a href="#" id="btnPro">→ Hazte Pro</a>
+      </div>
+      <div class="side-label" style="padding-top:0">Sesión</div>
+      <div class="side-user" title="Usuario que inició sesión"><span class="av av-on">A</span><span class="info"><b>admin</b><span>admin_sismox@gmail.com</span></span></div>
+    </div>
+  </aside>
+
+  <div class="main">
+    <header class="topbar">
+      <button class="ham" id="sidebarToggle" aria-label="Menú"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 3v18"/></svg></button>
+      <nav class="topnav"><a href="memoria.html" class="active">Memoria de cálculo</a><a href="index.html">Generador de espectro</a></nav>
+      <div class="top-actions">
+        <div class="api-status" id="apiStatus" title="Estado de la API ETABS"><span class="dot" id="apiDot"></span><span id="apiText">ETABS: sin conexión</span></div>
+        <a class="icon-btn" id="btnDescargar" href="/descargar" download="ESPECTRA-Setup.exe" title="Descargar el puente para ETABS" aria-label="Descargar instalador">
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/></svg>
+        </a>
+        <button class="icon-btn" id="btnTheme" title="Cambiar tema" aria-label="Tema oscuro">
+          <svg class="ic-moon" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.8A9 9 0 1 1 11.2 3 7 7 0 0 0 21 12.8z"/></svg>
+          <svg class="ic-sun" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>
+        </button>
+        <span class="top-av">A</span>
+      </div>
+    </header>
+
+    <main class="content mem">
+
+      <section class="card" id="controles">
+        <div class="card-head"><h2>Memoria de cálculo · Análisis sísmico E.030</h2></div>
+        <p>La memoria se arma como <b>borrador</b> con la información calculada en las pestañas anteriores (Masa, Sistema, Escalamiento, Derivas, Junta). Luego puedes <b>editarla a mano</b> con el botón <b>Editar</b>: cambia textos, números, R, criterios o agrega notas según tu propio análisis. Es un documento abierto, no cerrado.</p>
+        <div class="actions" style="display:flex;gap:10px;flex-wrap:wrap">
+          <button class="btn btn-brand" id="btnGenerar">Generar memoria</button>
+          <button class="btn btn-soft" id="btnEditar">✏ Editar</button>
+          <button class="btn btn-soft" id="btnDocx">⬇ Descargar Word (DOCX)</button>
+          <button class="btn btn-ghost" id="btnConfig">⚙ Colores</button>
+        </div>
+        <div class="cfg" id="cfgPanel">
+          <label>Dirección X <input type="color" id="colX" value="#2563eb" /></label>
+          <label>Dirección Y <input type="color" id="colY" value="#16a34a" /></label>
+          <button class="btn btn-soft" id="cfgReset" style="padding:6px 12px">Restablecer</button>
+        </div>
+        <p class="se-estado" id="estado"></p>
+      </section>
+
+      <div class="preview" id="preview" style="display:none">
+
+        <div id="avisoVerif" style="display:none"></div>
+
+        <!-- Página 1 -->
+        <div class="page">
+          <h2 class="doc-title">Memoria de cálculo · Análisis sísmico E.030</h2>
+          <h3>1. Ubicación</h3>
+          <p id="ubiTexto">—</p>
+          <div class="cap">Figura 1 · Zonificación sísmica del Perú (E.030)</div>
+          <div id="mapaMem" class="mapa-mem"></div>
+
+          <h3>2. Introducción</h3>
+          <p>Dada la sismicidad de la zona geográfica del proyecto, es necesario realizar un análisis del comportamiento del edificio bajo solicitaciones sísmicas. El objetivo del análisis será dotar a la edificación de la rigidez, resistencia y ductilidad adecuadas para cumplir con los requisitos que exige la Norma E.030 Diseño Sismorresistente.</p>
+
+          <h3>3. Parámetros considerados</h3>
+          <p id="introParam">El análisis sísmico se efectuó siguiendo las indicaciones de la Norma E.030.</p>
+          <div class="cap">Tabla 1 · Parámetros sísmicos utilizados</div>
+          <table class="u-table" id="tablaParam"><tbody></tbody></table>
+
+          <h3>4. Regularidad de la edificación</h3>
+          <p id="regTexto">-</p>
+        </div>
+
+        <!-- Página 2 -->
+        <div class="page">
+          <h3>5. Espectro de diseño</h3>
+          <p>Espectro de diseño para las direcciones X e Y según la Norma E.030.</p>
+          <div class="cap">Figura 2 · Espectro de diseño (Sa/g vs T)</div>
+          <div class="chart-wrap"><canvas id="chartEsp"></canvas></div>
+
+          <h3 style="margin-top:18px">6. Masa participativa</h3>
+          <p id="masaTexto">Art. 40: la suma de masas efectivas debe alcanzar ≥ 90 % en cada dirección, con un mínimo de los tres primeros modos predominantes.</p>
+          <div class="cap">Tabla 2 · Relación de masa participativa por modo</div>
+          <table class="u-table" id="tablaMasa">
+            <thead><tr><th>Modo</th><th>T (s)</th><th>UX</th><th>UY</th><th>ΣUX</th><th>ΣUY</th></tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+
+        <!-- Página 3 -->
+        <div class="page">
+          <h3>7. Sistema estructural</h3>
+          <p id="sisTexto">Porcentaje de cortante en la base tomado por los muros, por dirección.</p>
+          <div class="cap">Figura 3 · Porcentaje de cortante tomado por los muros</div>
+          <div class="pie-grid">
+            <div class="pie-col"><h4>Dirección X</h4><div class="pw"><canvas id="pieX"></canvas></div><div id="infoX" class="cap"></div></div>
+            <div class="pie-col"><h4>Dirección Y</h4><div class="pw"><canvas id="pieY"></canvas></div><div id="infoY" class="cap"></div></div>
+          </div>
+        </div>
+
+        <!-- Página 4 -->
+        <div class="page">
+          <h3>8. Escalamiento sísmico</h3>
+          <p>Periodos fundamentales y cortantes basales por dirección. Art. 44: la cortante dinámica en la base no debe ser menor al 80 % (regular) o 90 % (irregular) de la estática; si no, se aplica un factor <b>f ≥ 1</b> a las combinaciones de diseño (no a las de derivas).</p>
+          <div class="cap">Tabla 3 · Factor de escala por combinación de diseño</div>
+          <table class="u-table" id="tablaEsc">
+            <thead><tr><th>Caso</th><th>Dir.</th><th>T (s)</th><th>C</th><th>V estática</th><th id="thFracEsc">% V est.</th><th>V dinámica</th><th>f</th></tr></thead>
+            <tbody></tbody>
+          </table>
+          <p class="se-estado" id="notaEsc"></p>
+        </div>
+
+        <!-- Página 6 -->
+        <div class="page">
+          <h3>9. Distorsiones de entrepiso</h3>
+          <table class="u-table" id="tablaDist">
+            <thead><tr><th>Dirección</th><th>Deriva máxima (Δ/h)</th><th>Límite</th><th>Verificación</th></tr></thead>
+            <tbody></tbody>
+          </table>
+          <div class="cap" id="capDeriva" style="display:none">Figura 4 · Deriva por nivel (combinaciones D-)</div>
+          <div class="drift-grid" id="driftGrid"></div>
+        </div>
+
+        <!-- Página 7 -->
+        <div class="page">
+          <h3>10. Junta sísmica</h3>
+          <p>Art. 52: separación mínima <b>s = ⅔·(Δ + Δ<sub>vecino</sub>) ≥ 0.02·Z·S·h ≥ 0.03 m</b>, con Δ del caso de derivas más crítico (D-).</p>
+          <div class="cap">Tabla 4 · Separación sísmica por dirección</div>
+          <table class="u-table" id="tablaJunta">
+            <thead><tr><th>Dir.</th><th>Δ edificio</th><th>Δ vecino</th><th>0.02·Z·S·h</th><th>⅔(Δ+Δv)</th><th>s (m)</th><th>Sep. límite</th></tr></thead>
+            <tbody></tbody>
+          </table>
+          <p class="se-estado" id="juntaNota"></p>
+        </div>
+
+        <!-- Resumen final · Tabla 6 -->
+        <div class="page">
+          <h3>11. Resumen del análisis sísmico</h3>
+          <div class="cap">Tabla 5 · Cargas sísmicas</div>
+          <table class="u-table">
+            <tbody>
+              <tr><td class="left"><b>Reglamento</b></td><td>E.030</td></tr>
+              <tr><td class="left"><b>Factor de zona, Z</b></td><td id="rsZ">—</td></tr>
+              <tr><td class="left"><b>Factor de uso, U</b></td><td id="rsU">—</td></tr>
+              <tr><td class="left"><b>Coeficiente de reducción, R</b></td><td id="rsR">—</td></tr>
+            </tbody>
+          </table>
+          <div class="cap" style="margin-top:14px">Tabla 6 · Resultados por dirección</div>
+          <table class="u-table" id="tablaResumen">
+            <thead><tr><th>Dirección</th><th>Sistema</th><th>R₀</th><th>Periodo (s)</th><th>Cortante de diseño (tonf)</th><th>Máx. despl. azotea (cm)</th><th>Máx. deriva</th></tr></thead>
+            <tbody id="rsRes"></tbody>
+          </table>
+        </div>
+
+      </div><!-- /.preview -->
+
+    </main>
+  </div>
+</div>
+
+<div class="toast-container" id="toasts"></div>
+<script src="memoria.js"></script>
+</body>
+</html>
