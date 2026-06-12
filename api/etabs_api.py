@@ -1309,7 +1309,15 @@ class Handler(BaseHTTPRequestHandler):
         pass  # silencia el log por petición
 
 
-URL = f"http://{HOST}:{PORT}/index.html"
+# URL que abre el botón "Abrir en el navegador". El bridge solo expone la API
+# de ETABS en HOST:PORT — la UI del calculador vive en hingenia.com. El usuario
+# debe estar logueado y con plan activo (gate de membresía en el plugin
+# hingenia-apps). Para testear contra staging, cambiar a pruebas.hingenia.com.
+# Override por variable de entorno HINGENIA_WEB_URL si hace falta.
+URL = os.environ.get(
+    "HINGENIA_WEB_URL",
+    "https://hingenia.com/apps/calculador-estructural/",
+)
 
 
 def _log(msg):
