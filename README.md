@@ -43,9 +43,14 @@ directos y desinstalador.
 ```powershell
 .\installer\build_installer.bat
 ```
-Hace 3 pasos: (1) genera el icono `assets\espectra.ico`, (2) compila
+Hace 3 pasos: (1) genera el icono + gráficos de marca, (2) compila
 `dist\ESPECTRA.exe` (~26 MB, autocontenido), (3) compila
-`dist\ESPECTRA-Setup.exe` (~28 MB, el instalador).
+`dist\ESPECTRA-Setup.exe` (el instalador con asistente).
+
+El instalador ahora abre con una **pantalla de presentación hermosa** con los logos de
+ESPECTRA + Hingenia y el crédito "Ingeniero Abel Julcarima" (generado por
+`installer/make_installer_graphics.py`).
+
 Requiere `C:\Python` con `comtypes` + `pyinstaller`, e **Inno Setup 6**
 (`winget install JRSoftware.InnoSetup`).
 

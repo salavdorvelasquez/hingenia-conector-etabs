@@ -14,6 +14,9 @@ set "ISCC=%LOCALAPPDATA%\Programs\Inno Setup 6\ISCC.exe"
 echo === [1/3] Generando icono ===
 "%PY%" "installer\make_icon.py" || (echo ERROR icono & pause & exit /b 1)
 
+echo === [1b] Generando gráficos de presentación del instalador (ESPECTRA + Hingenia + crédito) ===
+"%PY%" "installer\make_installer_graphics.py" || (echo ERROR gráficos instalador & pause & exit /b 1)
+
 echo === [2/3] Compilando el puente (ESPECTRA.exe) ===
 call "build_exe.bat" < nul
 if not exist "dist\ESPECTRA.exe" (echo ERROR: no se genero dist\ESPECTRA.exe & pause & exit /b 1)

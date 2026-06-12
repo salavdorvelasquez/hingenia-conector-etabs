@@ -1,12 +1,15 @@
 ; ============================================================================
 ;  ESPECTRA - Instalador (Inno Setup)
-;  Asistente grafico que instala el puente ETABS UNA SOLA VEZ en
-;  "Archivos de programa", con accesos directos, logo y desinstalador.
-;  Compilar con:  installer\build_installer.bat
+;  Asistente gráfico con pantalla de presentación de marca.
+;  Muestra primero un diseño bonito con logos ESPECTRA + Hingenia
+;  y crédito a Ingeniero Abel Julcarima.
+;
+;  Compilar con: installer\build_installer.bat
+;  El CI (release.yml) genera los assets automáticamente.
 ; ============================================================================
 
 #define MyAppName "ESPECTRA"
-#define MyAppVersion "1.0.1"
+#define MyAppVersion "1.0.2"
 #define MyAppPublisher "ESPECTRA"
 #define MyAppExeName "ESPECTRA.exe"
 
@@ -22,19 +25,29 @@ DefaultDirName={autopf}\{#MyAppName}
 DefaultGroupName={#MyAppName}
 DisableProgramGroupPage=yes
 DisableDirPage=auto
+
 ; Carpeta y nombre del instalador resultante
 OutputDir=..\dist
 OutputBaseFilename=ESPECTRA-Setup
-; Logo / iconos
+
+; ================== BRANDING DEL INSTALADOR ==================
+; Icono principal de la ventana y desinstalador
 SetupIconFile=..\assets\espectra.ico
 UninstallDisplayIcon={app}\{#MyAppExeName}
+
+; Imagen lateral izquierda del wizard (todo el asistente se ve con marca)
+WizardImageFile=..\assets\espectra-wizard-banner.png
+; Imagen pequeña superior derecha del wizard
+WizardSmallImageFile=..\assets\espectra-wizard-small.png
+
 WizardStyle=modern
 Compression=lzma2/max
 SolidCompression=yes
 ArchitecturesInstallIn64BitMode=x64compatible
-; Instala para toda la maquina (Archivos de programa) -> pide elevacion una vez
+
+; Instala para toda la máquina (Archivos de programa) -> pide elevación una vez
 PrivilegesRequired=admin
-; Cierra la app si esta corriendo durante una actualizacion
+; Cierra la app si está corriendo durante una actualización
 CloseApplications=yes
 
 [Languages]
@@ -46,6 +59,9 @@ Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{
 [Files]
 Source: "..\dist\{#MyAppExeName}"; DestDir: "{app}"; Flags: ignoreversion
 
+; Imagen de presentación de marca (solo se extrae temporalmente para la primera pantalla)
+Source: "..\assets\espectra-presentation.png"; DestDir: "{tmp}"; Flags: dontcopy
+
 [Icons]
 Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; IconFilename: "{app}\{#MyAppExeName}"
 Name: "{group}\Desinstalar {#MyAppName}"; Filename: "{uninstallexe}"
@@ -53,3 +69,62 @@ Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; IconFilen
 
 [Run]
 Filename: "{app}\{#MyAppExeName}"; Description: "Iniciar {#MyAppName} ahora"; Flags: nowait postinstall skipifsilent
+
+; ============================================================================
+; PANTALLA DE PRESENTACIÓN CON BRANDING (ESPECTRA + Hingenia + crédito)
+; Aparece como primera pantalla al abrir el instalador.
+; El diseño está mayormente en la imagen generada (hermosa y controlada).
+; ============================================================================
+[Code]
+var
+  PresentationPage: TWizardPage;
+
+procedure CreatePresentationPage;
+var
+  Image: TBitmapImage;
+  NoteLabel: TLabel;
+  SurfaceWidth, SurfaceHeight: Integer;
+begin
+  PresentationPage := CreateCustomPage(
+    wpWelcome,
+    'ESPECTRA',
+    'Conector para ETABS • Análisis Sísmico E.030 (2026)'
+  );
+
+  // Extraer la imagen de presentación (generada con make_installer_graphics.py)
+  ExtractTemporaryFile('espectra-presentation.png');
+
+  // Imagen principal centrada (el diseño completo con logos y crédito)
+  Image := TBitmapImage.Create(PresentationPage);
+  Image.Parent := PresentationPage.Surface;
+  Image.Bitmap.LoadFromFile(ExpandConstant('{tmp}\espectra-presentation.png'));
+
+  // Centrar horizontalmente
+  SurfaceWidth := PresentationPage.Surface.Width;
+  Image.Width := Image.Bitmap.Width;
+  Image.Height := Image.Bitmap.Height;
+  Image.Left := (SurfaceWidth - Image.Width) div 2;
+  Image.Top := 20;
+  Image.Stretch := False;
+
+  // Nota inferior sutil (debajo de la imagen con el crédito ya incluido)
+  NoteLabel := TLabel.Create(PresentationPage);
+  NoteLabel.Parent := PresentationPage.Surface;
+  NoteLabel.Caption := 'Haz clic en Siguiente para continuar con la instalación.';
+  NoteLabel.Font.Size := 9;
+  NoteLabel.Font.Color := $666666;  // gris suave
+  NoteLabel.Top := Image.Top + Image.Height + 18;
+  NoteLabel.Left := (SurfaceWidth - NoteLabel.Width) div 2;
+end;
+
+procedure InitializeWizard();
+begin
+  CreatePresentationPage;
+end;
+
+function ShouldSkipPage(PageID: Integer): Boolean;
+begin
+  // Saltamos la página de bienvenida por defecto de Inno Setup.
+  // La primera pantalla que ve el usuario es nuestra presentación con branding.
+  Result := (PageID = wpWelcome);
+end;
