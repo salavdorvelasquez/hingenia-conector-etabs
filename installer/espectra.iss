@@ -36,9 +36,10 @@ SetupIconFile=..\assets\espectra.ico
 UninstallDisplayIcon={app}\{#MyAppExeName}
 
 ; Imagen lateral izquierda del wizard (todo el asistente se ve con marca)
-WizardImageFile=..\assets\espectra-wizard-banner.png
+; Usamos .bmp (no PNG) para máxima compatibilidad y evitar "bitmap image is not valid"
+WizardImageFile=..\assets\espectra-wizard-banner.bmp
 ; Imagen pequeña superior derecha del wizard
-WizardSmallImageFile=..\assets\espectra-wizard-small.png
+WizardSmallImageFile=..\assets\espectra-wizard-small.bmp
 
 WizardStyle=modern
 Compression=lzma2/max
@@ -60,7 +61,8 @@ Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{
 Source: "..\dist\{#MyAppExeName}"; DestDir: "{app}"; Flags: ignoreversion
 
 ; Imagen de presentación de marca (solo se extrae temporalmente para la primera pantalla)
-Source: "..\assets\espectra-presentation.png"; DestDir: "{tmp}"; Flags: dontcopy
+; Usamos .bmp para máxima compatibilidad al cargar con TBitmapImage
+Source: "..\assets\espectra-presentation.bmp"; DestDir: "{tmp}"; Flags: dontcopy
 
 [Icons]
 Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; IconFilename: "{app}\{#MyAppExeName}"
@@ -92,12 +94,13 @@ begin
   );
 
   // Extraer la imagen de presentación (generada con make_installer_graphics.py)
-  ExtractTemporaryFile('espectra-presentation.png');
+  // Usamos .bmp para evitar errores "bitmap image is not valid"
+  ExtractTemporaryFile('espectra-presentation.bmp');
 
   // Imagen principal centrada (el diseño completo con logos y crédito)
   Image := TBitmapImage.Create(PresentationPage);
   Image.Parent := PresentationPage.Surface;
-  Image.Bitmap.LoadFromFile(ExpandConstant('{tmp}\espectra-presentation.png'));
+  Image.Bitmap.LoadFromFile(ExpandConstant('{tmp}\espectra-presentation.bmp'));
 
   // Centrar horizontalmente
   SurfaceWidth := PresentationPage.Surface.Width;
