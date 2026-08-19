@@ -35,11 +35,16 @@ PORT = 8731
 
 # Version de ESPECTRA. Debe coincidir con MyAppVersion de installer/espectra.iss
 # y con el tag vX.Y.Z que dispara el release en GitHub Actions.
-APP_VERSION = "1.0.16"
+APP_VERSION = "1.0.17"
 
 # De aqui se leen las versiones publicadas para avisar de actualizaciones.
 GITHUB_REPO = "salavdorvelasquez/hingenia-conector-etabs"
+# La pagina de releases redirige a la ultima publicada: sirve para saber la
+# version sin gastar la cuota de la API, que son 60 peticiones por hora y por
+# IP y se agota facil en una oficina con varios equipos.
+RELEASE_WEB = "https://github.com/%s/releases/latest" % GITHUB_REPO
 RELEASE_API = "https://api.github.com/repos/%s/releases/latest" % GITHUB_REPO
+DESCARGA_FMT = "https://github.com/%s/releases/download/%%s/%%s" % GITHUB_REPO
 INSTALADOR_ASSET = "ESPECTRA-Setup.exe"
 
 
@@ -79,36 +84,48 @@ def _version_tupla(txt):
     return tuple(partes[:3])
 
 
-def buscar_actualizacion(timeout=6):
+def buscar_actualizacion(timeout=8):
     """Devuelve {'hay': bool, 'version': str, 'url': str} o {'hay': False, 'error': str}.
+
+    Primero se mira a donde redirige la pagina de releases, que dice cual es la
+    ultima sin consumir cuota. Si eso falla se prueba la API, que limita a 60
+    peticiones por hora y por IP.
 
     Nunca lanza: si no hay internet o GitHub no responde, se informa y ya.
     """
     import urllib.request
-    try:
+
+    def _pide(url, cabeceras=None):
         req = urllib.request.Request(
-            RELEASE_API,
-            headers={"Accept": "application/vnd.github+json",
-                     "User-Agent": "ESPECTRA/%s" % APP_VERSION},
-        )
-        with urllib.request.urlopen(req, timeout=timeout) as r:
-            datos = json.loads(r.read().decode("utf-8"))
+            url, headers=dict({"User-Agent": "ESPECTRA/%s" % APP_VERSION}, **(cabeceras or {})))
+        return urllib.request.urlopen(req, timeout=timeout)
+
+    tag, error = "", ""
+    # 1) Por redireccion: /releases/latest acaba en /releases/tag/vX.Y.Z
+    try:
+        with _pide(RELEASE_WEB) as r:
+            final = r.geturl() or ""
+        if "/tag/" in final:
+            tag = final.rsplit("/tag/", 1)[1].strip()
     except Exception as e:
-        return {"hay": False, "error": str(e)}
+        error = str(e)
 
-    tag = datos.get("tag_name") or ""
+    # 2) Si no, la API.
     if not tag:
-        return {"hay": False, "error": "La release publicada no tiene tag."}
+        try:
+            with _pide(RELEASE_API, {"Accept": "application/vnd.github+json"}) as r:
+                datos = json.loads(r.read().decode("utf-8"))
+            tag = (datos.get("tag_name") or "").strip()
+        except Exception as e:
+            error = str(e)
 
-    url = ""
-    for asset in datos.get("assets") or []:
-        if asset.get("name") == INSTALADOR_ASSET:
-            url = asset.get("browser_download_url") or ""
-            break
+    if not tag:
+        return {"hay": False, "error": error or "No se pudo leer la ultima version publicada."}
 
+    url = DESCARGA_FMT % (tag, INSTALADOR_ASSET)
     hay = _version_tupla(tag) > _version_tupla(APP_VERSION)
-    return {"hay": bool(hay and url), "version": tag.lstrip("vV"),
-            "url": url, "notas": datos.get("html_url") or ""}
+    return {"hay": bool(hay), "version": tag.lstrip("vV"), "url": url,
+            "notas": "https://github.com/%s/releases/tag/%s" % (GITHUB_REPO, tag)}
 
 
 def descargar_e_instalar(url, progreso=None):
