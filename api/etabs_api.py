@@ -35,7 +35,7 @@ PORT = 8731
 
 # Version de ESPECTRA. Debe coincidir con MyAppVersion de installer/espectra.iss
 # y con el tag vX.Y.Z que dispara el release en GitHub Actions.
-APP_VERSION = "1.0.13"
+APP_VERSION = "1.0.14"
 
 # De aqui se leen las versiones publicadas para avisar de actualizaciones.
 GITHUB_REPO = "salavdorvelasquez/hingenia-conector-etabs"
@@ -1969,11 +1969,11 @@ def _run_gui(srv):
                       activeforeground="white" if primary else INK)
         return b
 
-    mk_btn(btns, "Abrir en el navegador", _abrir_navegador, True).pack(
+    mk_btn(btns, "Abrir web", _abrir_navegador, True).pack(
         side="left", fill="x", expand=True)
 
-    btn_buscar = mk_btn(btns, "Buscar actualización", lambda: None, False)
-    btn_buscar.pack(side="left", padx=(10, 0))
+    btn_buscar = mk_btn(btns, "Actualizar", lambda: None, False)
+    btn_buscar.pack(side="left", fill="x", expand=True, padx=(10, 0))
 
     def detener():
         try:
@@ -1987,7 +1987,8 @@ def _run_gui(srv):
             pass
         root.destroy()
 
-    mk_btn(btns, "Detener", detener, False).pack(side="left", padx=(10, 0))
+    mk_btn(btns, "Salir", detener, False).pack(
+        side="left", fill="x", expand=True, padx=(10, 0))
 
     # ---- Actualizaciones ------------------------------------------------
     # La comprobacion va en un hilo aparte: si no hay internet, la ventana no
@@ -1995,7 +1996,7 @@ def _run_gui(srv):
     nueva = {"url": "", "version": ""}
 
     def _instalar_actualizacion():
-        btn_upd.config(state="disabled", text="Descargando…")
+        btn_buscar.config(state="disabled", text="Descargando…")
 
         def _worker():
             ok, res = descargar_e_instalar(
@@ -2007,12 +2008,17 @@ def _run_gui(srv):
                 root.after(1200, detener)
             else:
                 root.after(0, lambda: (val_ver.config(text=res, fg=RED),
-                                       btn_upd.config(state="normal",
-                                                      text="Actualizar a " + nueva["version"])))
+                                       btn_buscar.config(state="normal", text="Actualizar")))
 
         threading.Thread(target=_worker, daemon=True).start()
 
-    btn_upd = mk_btn(body, "Actualizar", _instalar_actualizacion, True)
+    # Un solo boton para las dos cosas: si ya se sabe que hay version nueva se
+    # instala, y si no, primero se comprueba.
+    def _actualizar():
+        if nueva.get("url"):
+            _instalar_actualizacion()
+        else:
+            _revisar_version(True)
 
     def _revisar_version(manual=False):
         if manual:
@@ -2025,15 +2031,17 @@ def _run_gui(srv):
 
             def _pintar():
                 if manual:
-                    btn_buscar.config(state="normal", text="Buscar actualización")
+                    btn_buscar.config(state="normal", text="Actualizar")
                 if info.get("hay"):
                     nueva["url"] = info["url"]
                     nueva["version"] = info["version"]
                     dot_ver.config(fg=BRAND)
                     val_ver.config(text="%s · hay la %s disponible" % (APP_VERSION, info["version"]),
                                    fg=INK)
-                    btn_upd.config(text="Actualizar a " + info["version"])
-                    btn_upd.pack(fill="x", pady=(10, 0), before=nota)
+                    btn_buscar.config(text="Actualizar a " + info["version"],
+                                      fg="white", bg=BRAND,
+                                      activebackground="#d94e12",
+                                      activeforeground="white")
                 elif info.get("error"):
                     dot_ver.config(fg=MUTED)
                     val_ver.config(text=APP_VERSION + " · sin conexión para comprobar", fg=MUTED)
@@ -2049,7 +2057,7 @@ def _run_gui(srv):
         if not manual:
             root.after(24 * 60 * 60 * 1000, _revisar_version)
 
-    btn_buscar.config(command=lambda: _revisar_version(True))
+    btn_buscar.config(command=_actualizar)
     root.after(1500, _revisar_version)
 
     nota = tk.Label(body, text="Deja esta ventana abierta mientras trabajas con ETABS.",
