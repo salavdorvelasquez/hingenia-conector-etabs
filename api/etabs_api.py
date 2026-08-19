@@ -35,7 +35,7 @@ PORT = 8731
 
 # Version de ESPECTRA. Debe coincidir con MyAppVersion de installer/espectra.iss
 # y con el tag vX.Y.Z que dispara el release en GitHub Actions.
-APP_VERSION = "1.0.11"
+APP_VERSION = "1.0.12"
 
 # De aqui se leen las versiones publicadas para avisar de actualizaciones.
 GITHUB_REPO = "salavdorvelasquez/hingenia-conector-etabs"
@@ -1882,31 +1882,55 @@ def _run_gui(srv):
 
     tray = {"icon": None}  # ícono de la bandeja del sistema (se crea más abajo)
 
-    # ---- Cabecera con gradiente + logo de onda ----
-    HH = 104
-    head = tk.Canvas(root, width=W, height=HH, highlightthickness=0, bd=0)
+    # ---- Cabecera con el estilo de la presentacion del instalador ----
+    HH, LIGHT = 196, "#f8f7f5"
+    head = tk.Canvas(root, width=W, height=HH, highlightthickness=0, bd=0, bg=LIGHT)
     head.pack(fill="x")
+
+    # Filo de color arriba, como en la presentacion.
     for x in range(W):
-        head.create_line(x, 0, x, HH, fill=_grad_color(x / max(1, W - 1)))
-    # Onda blanca (logo 〰)
-    cx, cy, amp, wide = 56, 52, 9, 56
+        head.create_line(x, 0, x, 5, fill=_grad_color(x / max(1, W - 1)))
+
+    # Icono: cuadrado de esquinas redondeadas con degradado en diagonal.
+    ix, iy, isz, rad = 30, 34, 88, 22
+    for dy in range(isz):
+        # Cerca de las esquinas la fila se acorta, y asi salen redondeadas.
+        rec = 0
+        if dy < rad:
+            rec = rad - int((rad * rad - (rad - dy) ** 2) ** 0.5)
+        elif dy > isz - rad:
+            rec = rad - int((rad * rad - (rad - (isz - dy)) ** 2) ** 0.5)
+        head.create_line(ix + rec, iy + dy, ix + isz - rec, iy + dy,
+                         fill=_grad_color(min(1.0, dy / float(isz))))
+
+    # Onda blanca del logo.
+    cx, cy, amp, wide = ix + isz / 2, iy + isz / 2, 11, 46
     pts = []
     for i in range(61):
         t = i / 60
         pts += [cx - wide / 2 + wide * t, cy - amp * math.sin(t * 2 * math.pi * 2)]
-    head.create_line(*pts, fill="white", width=6, capstyle="round",
+    head.create_line(*pts, fill="white", width=7, capstyle="round",
                      joinstyle="round", smooth=True)
-    head.create_text(100, 40, text="ESPECTRA", anchor="w", fill="white",
-                     font=("Segoe UI", 19, "bold"))
-    head.create_text(101, 68, text="Análisis sísmico · E.030 (2026)", anchor="w",
-                     fill="white", font=("Segoe UI", 9))
-    head.create_text(W - 18, 40, text="v" + APP_VERSION, anchor="e",
-                     fill="white", font=("Segoe UI", 10, "bold"))
-    head.create_text(W - 18, 68, text="Ing. Abel Max Julcarima Espíritu", anchor="e",
-                     fill="#ffe6d8", font=("Segoe UI", 8))
+
+    tx = ix + isz + 22
+    head.create_text(tx, 58, text="ESPECTRA", anchor="w", fill=INK,
+                     font=("Segoe UI", 25, "bold"))
+    head.create_text(tx + 2, 88, text="Análisis Sísmico E.030 (2026)", anchor="w",
+                     fill=MUTED, font=("Segoe UI", 9))
+    head.create_text(W - 22, 30, text="v" + APP_VERSION, anchor="e",
+                     fill=MUTED, font=("Segoe UI", 9, "bold"))
+
+    head.create_line(tx, 106, W - 30, 106, fill="#e5e7eb")
+    head.create_text(tx, 122, text="Creación conjunta con", anchor="w",
+                     fill=MUTED, font=("Segoe UI", 9))
+    head.create_text(tx, 142, text="HINGENIA", anchor="w", fill=BRAND,
+                     font=("Segoe UI", 14, "bold"))
+
+    head.create_text(W / 2, 172, text="Ing. Abel Max Julcarima Espíritu",
+                     fill=INK, font=("Segoe UI", 11, "bold"))
 
     body = tk.Frame(root, bg=BG)
-    body.pack(fill="both", expand=True, padx=22, pady=(16, 18))
+    body.pack(fill="both", expand=True, padx=24, pady=(14, 18))
 
     def fila(parent, titulo):
         f = tk.Frame(parent, bg=BG)
