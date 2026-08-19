@@ -35,7 +35,7 @@ PORT = 8731
 
 # Version de ESPECTRA. Debe coincidir con MyAppVersion de installer/espectra.iss
 # y con el tag vX.Y.Z que dispara el release en GitHub Actions.
-APP_VERSION = "1.0.14"
+APP_VERSION = "1.0.15"
 
 # De aqui se leen las versiones publicadas para avisar de actualizaciones.
 GITHUB_REPO = "salavdorvelasquez/hingenia-conector-etabs"
@@ -112,14 +112,25 @@ def buscar_actualizacion(timeout=6):
 
 
 def descargar_e_instalar(url, progreso=None):
-    """Baja el instalador a la carpeta temporal y lo ejecuta.
+    """Baja el instalador y lo lanza YA ELEVADO.
+
+    Se pide la elevacion aqui, con el verbo "runas", en vez de dejar que el
+    instalador se relance solo: al relanzarse comprueba que su proceso padre
+    sea el mismo ejecutable y esa comprobacion fallaba con
+    "Security validation failure: parent process has different executable!".
+
+    Tampoco se cierra ESPECTRA: de eso se encarga el propio instalador, que
+    lleva CloseApplications y sabe cerrar la app antes de reemplazar el .exe.
 
     'progreso' es un callable(texto) opcional para ir contando en la ventana.
     Devuelve (True, ruta) o (False, mensaje de error).
     """
     import tempfile
     import urllib.request
-    destino = os.path.join(tempfile.gettempdir(), INSTALADOR_ASSET)
+    # Carpeta propia por descarga: si quedo un instalador anterior bloqueado,
+    # no se pisa con este.
+    carpeta = tempfile.mkdtemp(prefix="espectra-")
+    destino = os.path.join(carpeta, INSTALADOR_ASSET)
     try:
         if progreso:
             progreso("Descargando la actualizacion...")
@@ -142,7 +153,13 @@ def descargar_e_instalar(url, progreso=None):
     try:
         if progreso:
             progreso("Abriendo el instalador...")
-        os.startfile(destino)  # noqa: S606 - instalador firmado por nosotros
+        import ctypes
+        # SW_SHOWNORMAL = 1. Por debajo de 32 el valor devuelto es un error.
+        rc = ctypes.windll.shell32.ShellExecuteW(None, "runas", destino, None, carpeta, 1)
+        if int(rc) <= 32:
+            if int(rc) == 1223:      # ERROR_CANCELLED: el usuario dijo que no
+                return False, "Se cancelo el permiso de administrador."
+            os.startfile(destino)    # ultimo recurso
     except Exception as e:
         return False, "Se descargo en %s pero no se pudo abrir: %s" % (destino, e)
     return True, destino
@@ -1882,17 +1899,17 @@ def _run_gui(srv):
 
     tray = {"icon": None}  # ícono de la bandeja del sistema (se crea más abajo)
 
-    # ---- Cabecera con el estilo de la presentacion del instalador ----
-    HH, LIGHT = 196, "#f8f7f5"
+    # ---- Cabecera compacta, con el estilo de la presentacion ----
+    HH, LIGHT = 108, "#f8f7f5"
     head = tk.Canvas(root, width=W, height=HH, highlightthickness=0, bd=0, bg=LIGHT)
     head.pack(fill="x")
 
     # Filo de color arriba, como en la presentacion.
     for x in range(W):
-        head.create_line(x, 0, x, 5, fill=_grad_color(x / max(1, W - 1)))
+        head.create_line(x, 0, x, 4, fill=_grad_color(x / max(1, W - 1)))
 
     # Icono: cuadrado de esquinas redondeadas con degradado en diagonal.
-    ix, iy, isz, rad = 30, 34, 88, 22
+    ix, iy, isz, rad = 22, 20, 58, 15
     for dy in range(isz):
         # Cerca de las esquinas la fila se acorta, y asi salen redondeadas.
         rec = 0
@@ -1904,37 +1921,30 @@ def _run_gui(srv):
                          fill=_grad_color(min(1.0, dy / float(isz))))
 
     # Onda blanca del logo.
-    cx, cy, amp, wide = ix + isz / 2, iy + isz / 2, 11, 46
+    cx, cy, amp, wide = ix + isz / 2, iy + isz / 2, 7, 30
     pts = []
     for i in range(61):
         t = i / 60
         pts += [cx - wide / 2 + wide * t, cy - amp * math.sin(t * 2 * math.pi * 2)]
-    head.create_line(*pts, fill="white", width=7, capstyle="round",
+    head.create_line(*pts, fill="white", width=5, capstyle="round",
                      joinstyle="round", smooth=True)
 
-    tx = ix + isz + 22
-    head.create_text(tx, 58, text="ESPECTRA", anchor="w", fill=INK,
-                     font=("Segoe UI", 25, "bold"))
-    head.create_text(tx + 2, 88, text="Análisis Sísmico E.030 (2026)", anchor="w",
-                     fill=MUTED, font=("Segoe UI", 9))
-    head.create_text(W - 22, 30, text="v" + APP_VERSION, anchor="e",
+    tx = ix + isz + 16
+    head.create_text(tx, 38, text="ESPECTRA", anchor="w", fill=INK,
+                     font=("Segoe UI", 18, "bold"))
+    head.create_text(tx + 1, 60, text="Análisis Sísmico E.030 (2026)", anchor="w",
+                     fill=MUTED, font=("Segoe UI", 8))
+    head.create_text(W - 20, 24, text="v" + APP_VERSION, anchor="e",
                      fill=MUTED, font=("Segoe UI", 9, "bold"))
-
-    head.create_line(tx, 106, W - 30, 106, fill="#e5e7eb")
-    head.create_text(tx, 122, text="Creación conjunta con", anchor="w",
-                     fill=MUTED, font=("Segoe UI", 9))
-    head.create_text(tx, 142, text="HINGENIA", anchor="w", fill=BRAND,
-                     font=("Segoe UI", 14, "bold"))
-
-    head.create_text(W / 2, 172, text="Ing. Abel Max Julcarima Espíritu",
-                     fill=INK, font=("Segoe UI", 11, "bold"))
+    head.create_text(W / 2, 92, text="Con HINGENIA · Ing. Abel Max Julcarima Espíritu",
+                     fill=MUTED, font=("Segoe UI", 8))
 
     body = tk.Frame(root, bg=BG)
-    body.pack(fill="both", expand=True, padx=24, pady=(14, 18))
+    body.pack(fill="both", expand=True, padx=24, pady=(10, 12))
 
     def fila(parent, titulo):
         f = tk.Frame(parent, bg=BG)
-        f.pack(fill="x", pady=6)
+        f.pack(fill="x", pady=3)
         dot = tk.Label(f, text="●", fg=MUTED, bg=BG, font=("Segoe UI", 13))
         dot.pack(side="left")
         tk.Label(f, text=titulo, fg=INK, bg=BG, width=9, anchor="w",
@@ -1946,22 +1956,19 @@ def _run_gui(srv):
 
     dot_srv, val_srv, _ = fila(body, "Servidor")
     dot_etabs, val_etabs, _ = fila(body, "ETABS")
-    dot_ver, val_ver, fila_ver = fila(body, "Versión")
-    val_ver.config(text=APP_VERSION + " · buscando actualizaciones…")
-
     # Linea suave que separa el estado de las acciones.
-    tk.Frame(body, bg="#e9e5e0", height=1).pack(fill="x", pady=(14, 0))
+    tk.Frame(body, bg="#e9e5e0", height=1).pack(fill="x", pady=(10, 0))
 
     dot_srv.config(fg=GREEN)
     val_srv.config(text=f"Activo · 127.0.0.1:{PORT}", fg=INK)
 
     # ---- Botones ----
     btns = tk.Frame(body, bg=BG)
-    btns.pack(fill="x", pady=(16, 0))
+    btns.pack(fill="x", pady=(10, 0))
 
     def mk_btn(parent, text, cmd, primary=True):
         b = tk.Button(parent, text=text, command=cmd, cursor="hand2",
-                      relief="flat", bd=0, padx=16, pady=9,
+                      relief="flat", bd=0, padx=14, pady=7,
                       font=("Segoe UI", 10, "bold"),
                       fg="white" if primary else MUTED,
                       bg=BRAND if primary else "#eef1f5",
@@ -1995,19 +2002,25 @@ def _run_gui(srv):
     # se queda colgada esperando a GitHub.
     nueva = {"url": "", "version": ""}
 
+    def estado(txt, color=None):
+        nota.config(text=txt, fg=color or MUTED)
+
     def _instalar_actualizacion():
         btn_buscar.config(state="disabled", text="Descargando…")
 
         def _worker():
             ok, res = descargar_e_instalar(
                 nueva["url"],
-                progreso=lambda t: root.after(0, lambda: val_ver.config(text=t, fg=INK)))
+                progreso=lambda t: root.after(0, lambda: estado(t, INK)))
             if ok:
-                # El instalador no puede reemplazar un .exe en uso: ESPECTRA se
-                # aparta para dejarlo trabajar.
-                root.after(1200, detener)
+                # El instalador cierra ESPECTRA el solo cuando le toque
+                # reemplazar el ejecutable; cerrarla antes rompia su
+                # comprobacion de proceso padre.
+                root.after(0, lambda: (
+                    estado("Instalador abierto: sigue sus pasos.", INK),
+                    btn_buscar.config(state="normal", text="Actualizar")))
             else:
-                root.after(0, lambda: (val_ver.config(text=res, fg=RED),
+                root.after(0, lambda: (estado(res, RED),
                                        btn_buscar.config(state="normal", text="Actualizar")))
 
         threading.Thread(target=_worker, daemon=True).start()
@@ -2023,8 +2036,7 @@ def _run_gui(srv):
     def _revisar_version(manual=False):
         if manual:
             btn_buscar.config(state="disabled", text="Buscando…")
-            dot_ver.config(fg=MUTED)
-            val_ver.config(text=APP_VERSION + " · comprobando…", fg=MUTED)
+            estado("Comprobando si hay una versión nueva…")
 
         def _worker():
             info = buscar_actualizacion()
@@ -2035,19 +2047,16 @@ def _run_gui(srv):
                 if info.get("hay"):
                     nueva["url"] = info["url"]
                     nueva["version"] = info["version"]
-                    dot_ver.config(fg=BRAND)
-                    val_ver.config(text="%s · hay la %s disponible" % (APP_VERSION, info["version"]),
-                                   fg=INK)
+                    estado("Hay la versión %s disponible." % info["version"], INK)
                     btn_buscar.config(text="Actualizar a " + info["version"],
                                       fg="white", bg=BRAND,
                                       activebackground="#d94e12",
                                       activeforeground="white")
                 elif info.get("error"):
-                    dot_ver.config(fg=MUTED)
-                    val_ver.config(text=APP_VERSION + " · sin conexión para comprobar", fg=MUTED)
-                else:
-                    dot_ver.config(fg=GREEN)
-                    val_ver.config(text=APP_VERSION + " · al día", fg=INK)
+                    if manual:
+                        estado("Sin conexión para comprobar actualizaciones.")
+                elif manual:
+                    estado("ESPECTRA está al día.", GREEN)
 
             root.after(0, _pintar)
 
@@ -2062,7 +2071,7 @@ def _run_gui(srv):
 
     nota = tk.Label(body, text="Deja esta ventana abierta mientras trabajas con ETABS.",
                     fg=MUTED, bg=BG, font=("Segoe UI", 8))
-    nota.pack(anchor="w", pady=(14, 0))
+    nota.pack(anchor="w", pady=(9, 0))
 
     # ---- Sondeo del estado de ETABS ----
     def refrescar():
