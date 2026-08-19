@@ -35,7 +35,7 @@ PORT = 8731
 
 # Version de ESPECTRA. Debe coincidir con MyAppVersion de installer/espectra.iss
 # y con el tag vX.Y.Z que dispara el release en GitHub Actions.
-APP_VERSION = "1.0.9"
+APP_VERSION = "1.0.10"
 
 # De aqui se leen las versiones publicadas para avisar de actualizaciones.
 GITHUB_REPO = "salavdorvelasquez/hingenia-conector-etabs"
@@ -1429,15 +1429,19 @@ def irregularidad_masa():
 # 9c) Irregularidad torsional y torsional extrema - Tabla N 12 (Ip = 0,75 / 0,60)
 # ----------------------------------------------------------------------------
 def irregularidad_torsion(limite=0.007):
-    """Compara el desplazamiento relativo maximo de un extremo con el promedio.
+    """Deriva maxima de un extremo frente a la deriva promedio del entrepiso.
 
-    Irregular si la razon supera 1,3; extrema si supera 1,5 (Tabla N 13). La
-    E.030 solo lo exige donde el maximo pasa del 50 % del limite de la Tabla
-    N 14, asi que los niveles por debajo de ese umbral se marcan como que no
-    aplica en vez de darlos por irregulares.
+    Irregular por encima de 1.3 y extrema por encima de 1.5 (Tabla N 13). Solo
+    se exige donde la deriva maxima pasa del 50 % del limite de distorsion, asi
+    que por debajo de ese umbral la fila queda como que no aplica.
 
-    Se leen las combinaciones D-, que ya traen la excentricidad accidental y el
-    factor 0,75 / 0,85.
+    Se lee "Diaphragm Max Over Avg Drifts", que da Max y Avg ya en deriva
+    (Delta/h). En ETABS:
+    Display > Show Tables > Analysis Results > Joint Output > Displacements.
+    Al ser por diafragma, solo aparecen los entrepisos que tienen uno, que es
+    justo la condicion de diafragma rigido que pide el criterio.
+
+    Se usan las combinaciones D-, que ya traen la excentricidad accidental.
     """
     SapModel, err = get_sapmodel()
     if err:
@@ -1447,79 +1451,90 @@ def irregularidad_torsion(limite=0.007):
     except (TypeError, ValueError):
         limite = 0.007
     umbral = 0.5 * limite
-    casos = {"X": ["D-SDXMasaY+", "D-SDXMasaY-"], "Y": ["D-SDYMasaX+", "D-SDYMasaX-"]}
+    # (combinacion, direccion de analisis, titulo del bloque)
+    bloques_def = [
+        ("D-SDXMasaY+", "X", "Direccion X - Masa Y+"),
+        ("D-SDXMasaY-", "X", "Direccion X - Masa Y-"),
+        ("D-SDYMasaX+", "Y", "Direccion Y - Masa X+"),
+        ("D-SDYMasaX-", "Y", "Direccion Y - Masa X-"),
+    ]
+    combos = [b[0] for b in bloques_def]
     try:
         try:
-            SapModel.DatabaseTables.SetLoadCombinationsSelectedForDisplay(
-                casos["X"] + casos["Y"])
+            SapModel.DatabaseTables.SetLoadCombinationsSelectedForDisplay(combos)
         except Exception:
             pass   # si la firma difiere, la tabla puede traer todo igualmente
 
-        # Dos tablas, cada una para lo suyo:
-        #  - "Story Max Over Avg Drifts" da la razon maximo/promedio, que es el
-        #    criterio de la Tabla N 12. Sus columnas Max/Avg vienen en
-        #    desplazamiento (Max = deriva x altura de entrepiso), pero eso da
-        #    igual: al dividirlas la altura se cancela.
-        #  - "Story Drifts" da la deriva Delta/h, que es lo que hay que comparar
-        #    contra el limite de la Tabla N 14 para saber si el criterio aplica.
-        _, filas_ratio = _leer_tabla(SapModel, "Story Max Over Avg Drifts")
-        _, filas_drift = _leer_tabla(SapModel, "Story Drifts")
-        if not filas_ratio:
-            return {"ok": False, "mensaje": "No se pudieron leer las derivas maxima y promedio. "
-                    "Corre el analisis en ETABS."}
+        _, tabla = _leer_tabla(SapModel, "Diaphragm Max Over Avg Drifts")
+        if not tabla:
+            return {"ok": False, "mensaje": "No se pudieron leer las derivas por diafragma. "
+                    "El criterio solo aplica con diafragma rigido: asigna diafragma a los "
+                    "entrepisos en ETABS y corre el analisis."}
 
-        # ETABS repite cada fila con StepType Max y Min; nos quedamos con lo peor.
-        razones, derivas_ratio = {}, {}
-        for r in filas_ratio:
-            caso, d = r.get("OutputCase"), r.get("Direction")
-            if d not in ("X", "Y") or caso not in casos.get(d, []):
+        _, sdef = _leer_tabla(SapModel, "Story Definitions")
+        orden = []
+        for r in sdef:
+            st = r.get("Story")
+            if st and st not in orden:
+                orden.append(st)
+
+        # ETABS repite cada fila con StepType Max y Min; nos quedamos con la peor.
+        datos = {}
+        for r in tabla:
+            caso = r.get("OutputCase")
+            if caso not in combos:
                 continue
-            mx, av = _abs_num(r.get("Max Drift")), _abs_num(r.get("Avg Drift"))
+            item = str(r.get("Item") or "")
+            d = item.strip()[-1:].upper()      # "Diaph D1 X" -> "X"
+            if d not in ("X", "Y"):
+                continue
+            mx = _abs_num(r.get("Max Drift"))
+            av = _abs_num(r.get("Avg Drift"))
             razon = (mx / av) if av > 0 else _abs_num(r.get("Ratio"))
-            k = (r.get("Story"), caso, d)
-            if razon > razones.get(k, (0.0, 0.0, 0.0))[0]:
-                razones[k] = (razon, mx, av)
-        for r in filas_drift:
-            caso, d = r.get("OutputCase"), r.get("Direction")
-            if d not in ("X", "Y") or caso not in casos.get(d, []):
-                continue
-            k = (r.get("Story"), caso, d)
-            derivas_ratio[k] = max(derivas_ratio.get(k, 0.0), _abs_num(r.get("Drift")))
+            k = (caso, d, r.get("Story"))
+            if razon > datos.get(k, (0.0, 0.0, 0.0))[0]:
+                datos[k] = (razon, mx, av)
 
-        filas, hay_irr, hay_ext = [], False, False
-        for k, (razon, mx, av) in razones.items():
-            story, caso, d = k
-            deriva = derivas_ratio.get(k, 0.0)
-            aplica = deriva > umbral
-            estado = "No aplica"
-            if aplica:
-                if razon > 1.5:
-                    estado, hay_ext = "Extrema", True
-                elif razon > 1.3:
-                    estado, hay_irr = "Irregular", True
-                else:
-                    estado = "Regular"
-            filas.append({"story": story, "caso": caso, "direccion": d,
-                          "max": round(mx, 6), "avg": round(av, 6),
-                          "deriva": round(deriva, 6),
-                          "razon": round(razon, 3), "aplica": aplica, "estado": estado})
+        bloques, hay_irr, hay_ext = [], False, False
+        for caso, direccion, titulo in bloques_def:
+            filas = []
+            for st in orden:
+                v = datos.get((caso, direccion, st))
+                if not v:
+                    continue
+                razon, mx, av = v
+                aplica = mx > umbral
+                estado = "No aplica"
+                if aplica:
+                    if razon > 1.5:
+                        estado, hay_ext = "Extrema", True
+                    elif razon > 1.3:
+                        estado, hay_irr = "Irregular", True
+                    else:
+                        estado = "Regular"
+                filas.append({"story": st, "max": round(mx, 6), "avg": round(av, 6),
+                              "razon": round(razon, 3), "aplica": aplica, "estado": estado})
+            if filas:
+                bloques.append({"titulo": titulo, "caso": caso,
+                                "direccion": direccion, "filas": filas})
 
-        if not filas:
+        if not bloques:
             return {"ok": False, "mensaje": "No se encontraron las combinaciones D-. Generalas "
                     "desde la pestana Datos y corre el analisis."}
 
-        filas.sort(key=lambda f: -f["razon"])
         ip = 0.60 if hay_ext else (0.75 if hay_irr else 1.0)
         if hay_ext:
-            msg = "Irregularidad torsional extrema: la razon maximo/promedio supera 1,5 (Ip = 0,60)."
+            msg = "Irregularidad torsional extrema: la razon maximo/promedio supera 1.5 (Ip = 0.60)."
         elif hay_irr:
-            msg = "Irregularidad torsional: la razon maximo/promedio supera 1,3 (Ip = 0,75)."
+            msg = "Irregularidad torsional: la razon maximo/promedio supera 1.3 (Ip = 0.75)."
         else:
-            msg = ("Sin irregularidad torsional: ningun nivel con deriva por encima del 50 % del "
-                   "limite supera la razon de 1,3.")
+            msg = ("Sin irregularidad torsional: ningun entrepiso con deriva por encima del 50 % "
+                   "del limite supera la razon de 1.3.")
         return {"ok": True, "irregular": hay_irr or hay_ext, "extrema": hay_ext,
-                "Ip": ip, "limite": limite, "umbral": round(umbral, 6),
-                "filas": filas[:40], "total": len(filas), "mensaje": msg}
+                "Ip": ip, "limite": limite, "umbral": round(umbral, 6), "bloques": bloques,
+                "ruta": "Display > Show Tables > Analysis Results > Joint Output > "
+                        "Displacements > Diaphragm Max Over Avg Drift",
+                "mensaje": msg}
     except Exception as e:
         return {"ok": False, "mensaje": "Error al revisar la irregularidad torsional: %s" % e}
 
