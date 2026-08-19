@@ -35,7 +35,7 @@ PORT = 8731
 
 # Version de ESPECTRA. Debe coincidir con MyAppVersion de installer/espectra.iss
 # y con el tag vX.Y.Z que dispara el release en GitHub Actions.
-APP_VERSION = "1.0.5"
+APP_VERSION = "1.0.6"
 
 # De aqui se leen las versiones publicadas para avisar de actualizaciones.
 GITHUB_REPO = "salavdorvelasquez/hingenia-conector-etabs"
@@ -711,7 +711,13 @@ def sistema_estructural(piso=None, pendulo=False):
             pass  # si la firma difiere, las tablas pueden traer todo igualmente
 
         def leer_fuerzas():
-            _, pf = _leer_tabla(SapModel, "Pier Forces")
+            # Sin muros de concreto no existe la tabla Pier Forces. No es un
+            # error: significa que ese nivel no tiene muros y el sistema es de
+            # porticos, asi que se sigue con la lista vacia.
+            try:
+                _, pf = _leer_tabla(SapModel, "Pier Forces")
+            except Exception:
+                pf = []
             _, sf = _leer_tabla(SapModel, "Story Forces")
             return pf, sf
 
@@ -721,9 +727,10 @@ def sistema_estructural(piso=None, pendulo=False):
             return {"ok": False, "mensaje": NO_ANALIZADO}
         reuso = True
         pier, story = leer_fuerzas()
-        if not pier:
-            return {"ok": False, "mensaje": "No hay fuerzas de pier. Asigna piers a tus muros en "
-                    "ETABS (Assign → Shell → Pier Label) y corre el análisis."}
+        # Sin piers el cortante de muros es cero y la clasificacion da Porticos,
+        # que es justo lo que corresponde a un modelo sin muros. Se avisa por si
+        # el usuario si tiene muros y lo que falta es asignarles el pier.
+        sin_piers = not pier
         # Si existe un pier 'TODO' (agregado), se usa solo ese; si no, se suman todos.
         usar_todo = any(r.get("Pier") == "TODO" for r in pier)
 
@@ -781,8 +788,8 @@ def sistema_estructural(piso=None, pendulo=False):
 
         if sin_datos:
             return {"ok": False, "mensaje": "No se obtuvieron cortantes. Verifica que las "
-                    "combinaciones de diseño (SDXMasaY±, SDYMasaX±) existan y que el modelo "
-                    "tenga muros con pier asignado."}
+                    "combinaciones de diseño (SDXMasaY±, SDYMasaX±) existan y corre el "
+                    "análisis."}
 
         # --- Art. 22: péndulo invertido (22.3) o albañilería en la dirección (22.2) ---
         alb = _albanileria_por_direccion(SapModel)
@@ -800,8 +807,11 @@ def sistema_estructural(piso=None, pendulo=False):
                 m["sistema"] = m["sistema"] + " + Albañilería (Art. 22.2)"
 
         origen = "resultados existentes" if reuso else "análisis ejecutado"
+        if sin_piers:
+            origen += " · sin muros de concreto con pier asignado"
         return {"ok": True, "direcciones": direcciones, "detalle": detalle,
                 "nivel": piso_base, "pendulo": bool(pendulo), "albanileria": alb,
+                "sin_piers": sin_piers,
                 "mensaje": f"Nivel {piso_base} — X: {direcciones['X']['sistema']} "
                            f"(R0={direcciones['X']['R0']}); Y: {direcciones['Y']['sistema']} "
                            f"(R0={direcciones['Y']['R0']}) · {origen}."}
