@@ -1279,6 +1279,11 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Access-Control-Allow-Origin", "*")
         self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
         self.send_header("Access-Control-Allow-Headers", "Content-Type")
+        # hingenia.com es una pagina publica y 127.0.0.1 es red local: Chrome y
+        # Edge exigen esta cabecera (Private Network Access) para dejar pasar la
+        # peticion. Sin ella el navegador corta antes de llegar aqui.
+        self.send_header("Access-Control-Allow-Private-Network", "true")
+        self.send_header("Access-Control-Max-Age", "600")
 
     def _send(self, obj, code=200):
         body = json.dumps(obj).encode("utf-8")
