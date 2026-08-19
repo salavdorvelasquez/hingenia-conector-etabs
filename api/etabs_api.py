@@ -1081,6 +1081,66 @@ def desbloquear():
 
 
 # ----------------------------------------------------------------------------
+# 10) Modos de vibracion: actualizar solo el numero de modos de los casos
+#     modales existentes, sin rehacer masas ni combinaciones.
+# ----------------------------------------------------------------------------
+def set_modos(modos_max, modos_min):
+    """Actualiza NumberModes en todos los casos modales del modelo.
+
+    El usuario ajusta los modos desde ESPECTRA cuando con niveles x 3 no se
+    llega al 90 % de masa efectiva (E.030 Art. 40.2). Aqui solo se toca el
+    caso modal: las masas, los casos estaticos y las combinaciones se quedan
+    como estaban.
+    """
+    try:
+        modos_max = int(modos_max)
+        modos_min = int(modos_min)
+    except (TypeError, ValueError):
+        return {"ok": False, "mensaje": "Los modos deben ser numeros enteros."}
+    if modos_max < 1 or modos_min < 1:
+        return {"ok": False, "mensaje": "Los modos deben ser mayores que cero."}
+    if modos_min > modos_max:
+        return {"ok": False, "mensaje": "El minimo no puede ser mayor que el maximo."}
+
+    SapModel, err = get_sapmodel()
+    if err:
+        return {"ok": False, "mensaje": err}
+    try:
+        if bool(SapModel.GetModelIsLocked()):
+            SapModel.SetModelIsLocked(False)
+            if bool(SapModel.GetModelIsLocked()):
+                return {"ok": False, "guardar": True,
+                        "mensaje": "El modelo esta bloqueado y no se pudo desbloquear. "
+                                   "Desbloquealo en ETABS y vuelve a intentarlo."}
+
+        casos = ["Modal", "ModalMasaX+", "ModalMasaX-", "ModalMasaY+", "ModalMasaY-"]
+        aplicados, faltan = [], []
+        for caso in casos:
+            try:
+                ret = SapModel.LoadCases.ModalEigen.SetNumberModes(caso, modos_max, modos_min)
+                if isinstance(ret, (list, tuple)):
+                    ret = ret[-1]
+                if int(ret) == 0:
+                    aplicados.append(caso)
+                else:
+                    faltan.append(caso)
+            except Exception:
+                faltan.append(caso)
+
+        if not aplicados:
+            return {"ok": False, "aplicados": [], "faltan": faltan,
+                    "mensaje": "No se encontro ningun caso modal. Genera antes las masas y "
+                               "combinaciones desde la pestana Datos."}
+        msg = "Modos actualizados a %d-%d en: %s." % (modos_min, modos_max, ", ".join(aplicados))
+        if faltan:
+            msg += " No estaban en el modelo: %s." % ", ".join(faltan)
+        msg += " Vuelve a correr el analisis en ETABS para leer la masa participativa."
+        return {"ok": True, "aplicados": aplicados, "faltan": faltan,
+                "modos_max": modos_max, "modos_min": modos_min, "mensaje": msg}
+    except Exception as e:
+        return {"ok": False, "mensaje": "No se pudieron actualizar los modos: %s" % e}
+
+# ----------------------------------------------------------------------------
 # 9) Irregularidad de rigidez (piso blando) · Tabla N° 11 (E.030)
 # ----------------------------------------------------------------------------
 def irregularidad_rigidez():
@@ -1313,6 +1373,8 @@ class Handler(BaseHTTPRequestHandler):
                 self._send(desbloquear())
             elif self.path == "/irregularidad_rigidez":
                 self._send(irregularidad_rigidez())
+            elif self.path == "/modos":
+                self._send(set_modos(payload.get("modos_max"), payload.get("modos_min")))
             else:
                 self._send({"ok": False, "mensaje": "Ruta no encontrada"}, 404)
 
