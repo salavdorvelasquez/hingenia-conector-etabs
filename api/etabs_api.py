@@ -1084,6 +1084,30 @@ def desbloquear():
 # 10) Modos de vibracion: actualizar solo el numero de modos de los casos
 #     modales existentes, sin rehacer masas ni combinaciones.
 # ----------------------------------------------------------------------------
+
+def get_modos():
+    """Lee los modos que tiene ahora mismo el caso modal del modelo.
+
+    GetNumberModes devuelve los valores por parametros de salida; comtypes los
+    entrega en una tupla cuyo orden puede variar segun la version, asi que se
+    toman los dos primeros enteros y se descarta el codigo de retorno final.
+    """
+    SapModel, err = get_sapmodel()
+    if err:
+        return {"ok": False, "mensaje": err}
+    for caso in ("Modal", "ModalMasaX+", "ModalMasaY+"):
+        try:
+            ret = SapModel.LoadCases.ModalEigen.GetNumberModes(caso, 0, 0)
+            if not isinstance(ret, (list, tuple)):
+                continue
+            valores = [int(v) for v in ret[:-1] if isinstance(v, int)]
+            if len(valores) >= 2 and valores[0] > 0:
+                return {"ok": True, "caso": caso,
+                        "modos_max": valores[0], "modos_min": valores[1]}
+        except Exception:
+            continue
+    return {"ok": False, "mensaje": "No se encontro ningun caso modal en el modelo."}
+
 def set_modos(modos_max, modos_min):
     """Actualiza NumberModes en todos los casos modales del modelo.
 
@@ -1285,6 +1309,10 @@ class Handler(BaseHTTPRequestHandler):
         elif self.path == "/niveles":
             with ETABS_LOCK:
                 datos = niveles()
+            self._send(datos)
+        elif self.path == "/modos":
+            with ETABS_LOCK:
+                datos = get_modos()
             self._send(datos)
         elif self.path == "/descargar":
             self._serve_installer()
