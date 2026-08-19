@@ -1108,7 +1108,7 @@ def get_modos():
             continue
     return {"ok": False, "mensaje": "No se encontro ningun caso modal en el modelo."}
 
-def set_modos(modos_max, modos_min):
+def set_modos(modos_max, modos_min, correr=True):
     """Actualiza NumberModes en todos los casos modales del modelo.
 
     El usuario ajusta los modos desde ESPECTRA cuando con niveles x 3 no se
@@ -1158,8 +1158,21 @@ def set_modos(modos_max, modos_min):
         msg = "Modos actualizados a %d-%d en: %s." % (modos_min, modos_max, ", ".join(aplicados))
         if faltan:
             msg += " No estaban en el modelo: %s." % ", ".join(faltan)
-        msg += " Vuelve a correr el analisis en ETABS para leer la masa participativa."
-        return {"ok": True, "aplicados": aplicados, "faltan": faltan,
+
+        # El usuario no tiene por que ir a ETABS a pulsar Run: cambiar los modos
+        # solo sirve si el modelo se vuelve a analizar.
+        analizado = False
+        if correr:
+            try:
+                SapModel.Analyze.RunAnalysis()
+                analizado = True
+                msg += " Analisis ejecutado; ya puedes leer la masa participativa."
+            except Exception as e:
+                msg += " No se pudo correr el analisis (%s): hazlo en ETABS." % e
+        else:
+            msg += " Corre el analisis en ETABS para leer la masa participativa."
+
+        return {"ok": True, "aplicados": aplicados, "faltan": faltan, "analizado": analizado,
                 "modos_max": modos_max, "modos_min": modos_min, "mensaje": msg}
     except Exception as e:
         return {"ok": False, "mensaje": "No se pudieron actualizar los modos: %s" % e}
@@ -1407,7 +1420,8 @@ class Handler(BaseHTTPRequestHandler):
             elif self.path == "/irregularidad_rigidez":
                 self._send(irregularidad_rigidez())
             elif self.path == "/modos":
-                self._send(set_modos(payload.get("modos_max"), payload.get("modos_min")))
+                self._send(set_modos(payload.get("modos_max"), payload.get("modos_min"),
+                                     payload.get("correr", True)))
             else:
                 self._send({"ok": False, "mensaje": "Ruta no encontrada"}, 404)
 
