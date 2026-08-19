@@ -35,7 +35,7 @@ PORT = 8731
 
 # Version de ESPECTRA. Debe coincidir con MyAppVersion de installer/espectra.iss
 # y con el tag vX.Y.Z que dispara el release en GitHub Actions.
-APP_VERSION = "1.0.8"
+APP_VERSION = "1.0.9"
 
 # De aqui se leen las versiones publicadas para avisar de actualizaciones.
 GITHUB_REPO = "salavdorvelasquez/hingenia-conector-etabs"
@@ -1352,14 +1352,15 @@ def set_modos(modos_max, modos_min, correr=True):
 # 9b) Irregularidad de masa o peso - Tabla N 11 (Ia = 0,90)
 # ----------------------------------------------------------------------------
 def irregularidad_masa():
-    """El peso de un piso mayor que 1,5 veces el de un piso adyacente.
+    """Peso de cada piso frente al del piso de arriba y al del piso de abajo.
 
-    La E.030 excluye azoteas y sotanos, asi que el ultimo nivel no se evalua y
-    tampoco sirve de referencia: una azotea ligera dispararia la alarma en el
-    piso de abajo sin que exista irregularidad.
+    Hay irregularidad cuando el peso de un piso es mayor que 1.5 veces el de un
+    piso adyacente. Se listan todos los niveles con sus dos comparaciones (V1
+    contra el superior, V2 contra el inferior); los extremos dejan vacia la que
+    no tiene vecino.
 
-    Se usan las masas por nivel (Mass Summary by Story). El peso es la masa por
-    la gravedad, asi que la razon entre dos niveles es la misma.
+    Los pesos salen de Mass Summary by Story, en ETABS:
+    Display > Show Tables > Model Definition > Other Definitions > Mass Data.
     """
     SapModel, err = get_sapmodel()
     if err:
@@ -1371,7 +1372,8 @@ def irregularidad_masa():
             return {"ok": False, "mensaje": "No se pudo leer la masa por nivel. Define la fuente "
                     "de masa en ETABS (Define / Mass Source) y vuelve a intentarlo."}
 
-        # Story Definitions viene del techo hacia abajo; la base no aparece.
+        # Story Definitions viene del techo hacia abajo y no incluye la base,
+        # que no es un piso y no debe entrar en la comparacion.
         orden = []
         for r in sdef:
             st = r.get("Story")
@@ -1383,40 +1385,41 @@ def irregularidad_masa():
             st = r.get("Story")
             if st:
                 por_piso[st] = _abs_num(r.get("UX"))
-        if not orden:
-            orden = list(por_piso.keys())
 
-        evaluables = [st for st in orden if st in por_piso]
-        azotea = evaluables[0] if evaluables else None
-        evaluables = evaluables[1:]
-
-        if len(evaluables) < 2:
-            return {"ok": False, "mensaje": "Hacen falta al menos dos niveles bajo la azotea "
-                    "para poder comparar pesos."}
+        niveles = [st for st in orden if st in por_piso]
+        if len(niveles) < 2:
+            return {"ok": False, "mensaje": "Hacen falta al menos dos niveles para comparar pesos."}
 
         filas, irregular = [], False
-        for i, st in enumerate(evaluables):
-            m = por_piso.get(st, 0.0)
-            vecinos = []
-            if i > 0:
-                vecinos.append((evaluables[i - 1], por_piso.get(evaluables[i - 1], 0.0)))
-            if i + 1 < len(evaluables):
-                vecinos.append((evaluables[i + 1], por_piso.get(evaluables[i + 1], 0.0)))
-            razon, contra = 0.0, None
-            for nombre, mv in vecinos:
-                if mv > 0 and (m / mv) > razon:
-                    razon, contra = m / mv, nombre
-            excede = razon > 1.5
-            if excede:
-                irregular = True
-            filas.append({"story": st, "masa": round(m, 3), "contra": contra,
-                          "razon": round(razon, 3), "excede": excede})
+        for i, st in enumerate(niveles):
+            w = por_piso.get(st, 0.0)
+            fila = {"story": st, "wi": round(w, 4),
+                    "razon_sup": None, "razon_inf": None, "v1": "", "v2": ""}
+            if i > 0:                       # hay piso encima
+                ws = por_piso.get(niveles[i - 1], 0.0)
+                if ws > 0:
+                    rz = w / ws
+                    fila["razon_sup"] = round(rz, 3)
+                    fila["v1"] = "Irreg." if rz > 1.5 else "Reg."
+                    if rz > 1.5:
+                        irregular = True
+            if i + 1 < len(niveles):        # hay piso debajo
+                wi_ = por_piso.get(niveles[i + 1], 0.0)
+                if wi_ > 0:
+                    rz = w / wi_
+                    fila["razon_inf"] = round(rz, 3)
+                    fila["v2"] = "Irreg." if rz > 1.5 else "Reg."
+                    if rz > 1.5:
+                        irregular = True
+            filas.append(fila)
 
         return {"ok": True, "irregular": irregular, "Ia": 0.90 if irregular else 1.0,
-                "azotea": azotea, "filas": filas,
-                "mensaje": ("Irregularidad de masa: el peso de al menos un piso supera 1,5 veces "
-                            "el de un piso adyacente (Ia = 0,90)." if irregular else
-                            "Sin irregularidad de masa: ningun piso supera 1,5 veces el peso de "
+                "azotea": niveles[0], "base": niveles[-1], "filas": filas,
+                "ruta": "Display > Show Tables > Model Definition > Other Definitions > "
+                        "Mass Data > Mass Summary by Story",
+                "mensaje": ("Irregularidad de masa: el peso de al menos un piso supera 1.5 veces "
+                            "el de un piso adyacente (Ia = 0.90)." if irregular else
+                            "Sin irregularidad de masa: ningun piso supera 1.5 veces el peso de "
                             "un piso adyacente.")}
     except Exception as e:
         return {"ok": False, "mensaje": "Error al revisar la irregularidad de masa: %s" % e}
