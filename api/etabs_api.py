@@ -35,7 +35,7 @@ PORT = 8731
 
 # Version de ESPECTRA. Debe coincidir con MyAppVersion de installer/espectra.iss
 # y con el tag vX.Y.Z que dispara el release en GitHub Actions.
-APP_VERSION = "1.0.12"
+APP_VERSION = "1.0.13"
 
 # De aqui se leen las versiones publicadas para avisar de actualizaciones.
 GITHUB_REPO = "salavdorvelasquez/hingenia-conector-etabs"
@@ -1949,12 +1949,6 @@ def _run_gui(srv):
     dot_ver, val_ver, fila_ver = fila(body, "Versión")
     val_ver.config(text=APP_VERSION + " · buscando actualizaciones…")
 
-    btn_buscar = tk.Button(fila_ver, text="Buscar actualización", cursor="hand2",
-                           relief="flat", bd=0, padx=10, pady=3,
-                           font=("Segoe UI", 8, "bold"), fg=MUTED, bg="#eef1f5",
-                           activebackground="#e2e8f0", activeforeground=INK)
-    btn_buscar.pack(side="right")
-
     # Linea suave que separa el estado de las acciones.
     tk.Frame(body, bg="#e9e5e0", height=1).pack(fill="x", pady=(14, 0))
 
@@ -1977,6 +1971,9 @@ def _run_gui(srv):
 
     mk_btn(btns, "Abrir en el navegador", _abrir_navegador, True).pack(
         side="left", fill="x", expand=True)
+
+    btn_buscar = mk_btn(btns, "Buscar actualización", lambda: None, False)
+    btn_buscar.pack(side="left", padx=(10, 0))
 
     def detener():
         try:
