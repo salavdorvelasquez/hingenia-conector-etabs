@@ -35,7 +35,7 @@ PORT = 8731
 
 # Version de ESPECTRA. Debe coincidir con MyAppVersion de installer/espectra.iss
 # y con el tag vX.Y.Z que dispara el release en GitHub Actions.
-APP_VERSION = "1.0.17"
+APP_VERSION = "1.0.18"
 
 # De aqui se leen las versiones publicadas para avisar de actualizaciones.
 GITHUB_REPO = "salavdorvelasquez/hingenia-conector-etabs"
@@ -204,9 +204,8 @@ def _installer_path():
     return None
 
 # Las herramientas son SOLO LECTURA: no guardan, no corren ni modifican el modelo.
-NO_ANALIZADO = ("El modelo no está analizado. Córrelo tú en ETABS (Analyze → Run Analysis, F5) "
-                "y vuelve a intentar. Esta herramienta solo LEE resultados: no guarda, no corre "
-                "ni modifica tu modelo.")
+# Los avisos van al grano: el usuario ya sabe que hace su programa.
+NO_ANALIZADO = "Corre el modelo en ETABS."
 
 try:
     import comtypes.client
