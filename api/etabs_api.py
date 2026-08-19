@@ -35,7 +35,7 @@ PORT = 8731
 
 # Version de ESPECTRA. Debe coincidir con MyAppVersion de installer/espectra.iss
 # y con el tag vX.Y.Z que dispara el release en GitHub Actions.
-APP_VERSION = "1.0.10"
+APP_VERSION = "1.0.11"
 
 # De aqui se leen las versiones publicadas para avisar de actualizaciones.
 GITHUB_REPO = "salavdorvelasquez/hingenia-conector-etabs"
@@ -1910,7 +1910,7 @@ def _run_gui(srv):
 
     def fila(parent, titulo):
         f = tk.Frame(parent, bg=BG)
-        f.pack(fill="x", pady=5)
+        f.pack(fill="x", pady=6)
         dot = tk.Label(f, text="●", fg=MUTED, bg=BG, font=("Segoe UI", 13))
         dot.pack(side="left")
         tk.Label(f, text=titulo, fg=INK, bg=BG, width=9, anchor="w",
@@ -1918,12 +1918,21 @@ def _run_gui(srv):
         val = tk.Label(f, text="…", fg=MUTED, bg=BG, anchor="w",
                        font=("Segoe UI", 10))
         val.pack(side="left")
-        return dot, val
+        return dot, val, f
 
-    dot_srv, val_srv = fila(body, "Servidor")
-    dot_etabs, val_etabs = fila(body, "ETABS")
-    dot_ver, val_ver = fila(body, "Versión")
+    dot_srv, val_srv, _ = fila(body, "Servidor")
+    dot_etabs, val_etabs, _ = fila(body, "ETABS")
+    dot_ver, val_ver, fila_ver = fila(body, "Versión")
     val_ver.config(text=APP_VERSION + " · buscando actualizaciones…")
+
+    btn_buscar = tk.Button(fila_ver, text="Buscar actualización", cursor="hand2",
+                           relief="flat", bd=0, padx=10, pady=3,
+                           font=("Segoe UI", 8, "bold"), fg=MUTED, bg="#eef1f5",
+                           activebackground="#e2e8f0", activeforeground=INK)
+    btn_buscar.pack(side="right")
+
+    # Linea suave que separa el estado de las acciones.
+    tk.Frame(body, bg="#e9e5e0", height=1).pack(fill="x", pady=(14, 0))
 
     dot_srv.config(fg=GREEN)
     val_srv.config(text=f"Activo · 127.0.0.1:{PORT}", fg=INK)
@@ -1984,11 +1993,18 @@ def _run_gui(srv):
 
     btn_upd = mk_btn(body, "Actualizar", _instalar_actualizacion, True)
 
-    def _revisar_version():
+    def _revisar_version(manual=False):
+        if manual:
+            btn_buscar.config(state="disabled", text="Buscando…")
+            dot_ver.config(fg=MUTED)
+            val_ver.config(text=APP_VERSION + " · comprobando…", fg=MUTED)
+
         def _worker():
             info = buscar_actualizacion()
 
             def _pintar():
+                if manual:
+                    btn_buscar.config(state="normal", text="Buscar actualización")
                 if info.get("hay"):
                     nueva["url"] = info["url"]
                     nueva["version"] = info["version"]
@@ -2007,9 +2023,12 @@ def _run_gui(srv):
             root.after(0, _pintar)
 
         threading.Thread(target=_worker, daemon=True).start()
-        # Una vez al dia basta: esto no es algo que haya que sondear.
-        root.after(24 * 60 * 60 * 1000, _revisar_version)
+        # Una vez al dia basta: esto no es algo que haya que sondear. El boton
+        # esta para cuando el usuario no quiera esperar a la siguiente.
+        if not manual:
+            root.after(24 * 60 * 60 * 1000, _revisar_version)
 
+    btn_buscar.config(command=lambda: _revisar_version(True))
     root.after(1500, _revisar_version)
 
     nota = tk.Label(body, text="Deja esta ventana abierta mientras trabajas con ETABS.",
