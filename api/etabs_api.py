@@ -35,7 +35,7 @@ PORT = 8731
 
 # Version de ESPECTRA. Debe coincidir con MyAppVersion de installer/espectra.iss
 # y con el tag vX.Y.Z que dispara el release en GitHub Actions.
-APP_VERSION = "1.0.7"
+APP_VERSION = "1.0.8"
 
 # De aqui se leen las versiones publicadas para avisar de actualizaciones.
 GITHUB_REPO = "salavdorvelasquez/hingenia-conector-etabs"
@@ -1348,6 +1348,179 @@ def set_modos(modos_max, modos_min, correr=True):
 # ----------------------------------------------------------------------------
 # 9) Irregularidad de rigidez (piso blando) · Tabla N° 11 (E.030)
 # ----------------------------------------------------------------------------
+# ----------------------------------------------------------------------------
+# 9b) Irregularidad de masa o peso - Tabla N 11 (Ia = 0,90)
+# ----------------------------------------------------------------------------
+def irregularidad_masa():
+    """El peso de un piso mayor que 1,5 veces el de un piso adyacente.
+
+    La E.030 excluye azoteas y sotanos, asi que el ultimo nivel no se evalua y
+    tampoco sirve de referencia: una azotea ligera dispararia la alarma en el
+    piso de abajo sin que exista irregularidad.
+
+    Se usan las masas por nivel (Mass Summary by Story). El peso es la masa por
+    la gravedad, asi que la razon entre dos niveles es la misma.
+    """
+    SapModel, err = get_sapmodel()
+    if err:
+        return {"ok": False, "mensaje": err}
+    try:
+        _, masas = _leer_tabla(SapModel, "Mass Summary by Story")
+        _, sdef = _leer_tabla(SapModel, "Story Definitions")
+        if not masas:
+            return {"ok": False, "mensaje": "No se pudo leer la masa por nivel. Define la fuente "
+                    "de masa en ETABS (Define / Mass Source) y vuelve a intentarlo."}
+
+        # Story Definitions viene del techo hacia abajo; la base no aparece.
+        orden = []
+        for r in sdef:
+            st = r.get("Story")
+            if st and st not in orden:
+                orden.append(st)
+
+        por_piso = {}
+        for r in masas:
+            st = r.get("Story")
+            if st:
+                por_piso[st] = _abs_num(r.get("UX"))
+        if not orden:
+            orden = list(por_piso.keys())
+
+        evaluables = [st for st in orden if st in por_piso]
+        azotea = evaluables[0] if evaluables else None
+        evaluables = evaluables[1:]
+
+        if len(evaluables) < 2:
+            return {"ok": False, "mensaje": "Hacen falta al menos dos niveles bajo la azotea "
+                    "para poder comparar pesos."}
+
+        filas, irregular = [], False
+        for i, st in enumerate(evaluables):
+            m = por_piso.get(st, 0.0)
+            vecinos = []
+            if i > 0:
+                vecinos.append((evaluables[i - 1], por_piso.get(evaluables[i - 1], 0.0)))
+            if i + 1 < len(evaluables):
+                vecinos.append((evaluables[i + 1], por_piso.get(evaluables[i + 1], 0.0)))
+            razon, contra = 0.0, None
+            for nombre, mv in vecinos:
+                if mv > 0 and (m / mv) > razon:
+                    razon, contra = m / mv, nombre
+            excede = razon > 1.5
+            if excede:
+                irregular = True
+            filas.append({"story": st, "masa": round(m, 3), "contra": contra,
+                          "razon": round(razon, 3), "excede": excede})
+
+        return {"ok": True, "irregular": irregular, "Ia": 0.90 if irregular else 1.0,
+                "azotea": azotea, "filas": filas,
+                "mensaje": ("Irregularidad de masa: el peso de al menos un piso supera 1,5 veces "
+                            "el de un piso adyacente (Ia = 0,90)." if irregular else
+                            "Sin irregularidad de masa: ningun piso supera 1,5 veces el peso de "
+                            "un piso adyacente.")}
+    except Exception as e:
+        return {"ok": False, "mensaje": "Error al revisar la irregularidad de masa: %s" % e}
+
+
+# ----------------------------------------------------------------------------
+# 9c) Irregularidad torsional y torsional extrema - Tabla N 12 (Ip = 0,75 / 0,60)
+# ----------------------------------------------------------------------------
+def irregularidad_torsion(limite=0.007):
+    """Compara el desplazamiento relativo maximo de un extremo con el promedio.
+
+    Irregular si la razon supera 1,3; extrema si supera 1,5 (Tabla N 13). La
+    E.030 solo lo exige donde el maximo pasa del 50 % del limite de la Tabla
+    N 14, asi que los niveles por debajo de ese umbral se marcan como que no
+    aplica en vez de darlos por irregulares.
+
+    Se leen las combinaciones D-, que ya traen la excentricidad accidental y el
+    factor 0,75 / 0,85.
+    """
+    SapModel, err = get_sapmodel()
+    if err:
+        return {"ok": False, "mensaje": err}
+    try:
+        limite = float(limite)
+    except (TypeError, ValueError):
+        limite = 0.007
+    umbral = 0.5 * limite
+    casos = {"X": ["D-SDXMasaY+", "D-SDXMasaY-"], "Y": ["D-SDYMasaX+", "D-SDYMasaX-"]}
+    try:
+        try:
+            SapModel.DatabaseTables.SetLoadCombinationsSelectedForDisplay(
+                casos["X"] + casos["Y"])
+        except Exception:
+            pass   # si la firma difiere, la tabla puede traer todo igualmente
+
+        # Dos tablas, cada una para lo suyo:
+        #  - "Story Max Over Avg Drifts" da la razon maximo/promedio, que es el
+        #    criterio de la Tabla N 12. Sus columnas Max/Avg vienen en
+        #    desplazamiento (Max = deriva x altura de entrepiso), pero eso da
+        #    igual: al dividirlas la altura se cancela.
+        #  - "Story Drifts" da la deriva Delta/h, que es lo que hay que comparar
+        #    contra el limite de la Tabla N 14 para saber si el criterio aplica.
+        _, filas_ratio = _leer_tabla(SapModel, "Story Max Over Avg Drifts")
+        _, filas_drift = _leer_tabla(SapModel, "Story Drifts")
+        if not filas_ratio:
+            return {"ok": False, "mensaje": "No se pudieron leer las derivas maxima y promedio. "
+                    "Corre el analisis en ETABS."}
+
+        # ETABS repite cada fila con StepType Max y Min; nos quedamos con lo peor.
+        razones, derivas_ratio = {}, {}
+        for r in filas_ratio:
+            caso, d = r.get("OutputCase"), r.get("Direction")
+            if d not in ("X", "Y") or caso not in casos.get(d, []):
+                continue
+            mx, av = _abs_num(r.get("Max Drift")), _abs_num(r.get("Avg Drift"))
+            razon = (mx / av) if av > 0 else _abs_num(r.get("Ratio"))
+            k = (r.get("Story"), caso, d)
+            if razon > razones.get(k, (0.0, 0.0, 0.0))[0]:
+                razones[k] = (razon, mx, av)
+        for r in filas_drift:
+            caso, d = r.get("OutputCase"), r.get("Direction")
+            if d not in ("X", "Y") or caso not in casos.get(d, []):
+                continue
+            k = (r.get("Story"), caso, d)
+            derivas_ratio[k] = max(derivas_ratio.get(k, 0.0), _abs_num(r.get("Drift")))
+
+        filas, hay_irr, hay_ext = [], False, False
+        for k, (razon, mx, av) in razones.items():
+            story, caso, d = k
+            deriva = derivas_ratio.get(k, 0.0)
+            aplica = deriva > umbral
+            estado = "No aplica"
+            if aplica:
+                if razon > 1.5:
+                    estado, hay_ext = "Extrema", True
+                elif razon > 1.3:
+                    estado, hay_irr = "Irregular", True
+                else:
+                    estado = "Regular"
+            filas.append({"story": story, "caso": caso, "direccion": d,
+                          "max": round(mx, 6), "avg": round(av, 6),
+                          "deriva": round(deriva, 6),
+                          "razon": round(razon, 3), "aplica": aplica, "estado": estado})
+
+        if not filas:
+            return {"ok": False, "mensaje": "No se encontraron las combinaciones D-. Generalas "
+                    "desde la pestana Datos y corre el analisis."}
+
+        filas.sort(key=lambda f: -f["razon"])
+        ip = 0.60 if hay_ext else (0.75 if hay_irr else 1.0)
+        if hay_ext:
+            msg = "Irregularidad torsional extrema: la razon maximo/promedio supera 1,5 (Ip = 0,60)."
+        elif hay_irr:
+            msg = "Irregularidad torsional: la razon maximo/promedio supera 1,3 (Ip = 0,75)."
+        else:
+            msg = ("Sin irregularidad torsional: ningun nivel con deriva por encima del 50 % del "
+                   "limite supera la razon de 1,3.")
+        return {"ok": True, "irregular": hay_irr or hay_ext, "extrema": hay_ext,
+                "Ip": ip, "limite": limite, "umbral": round(umbral, 6),
+                "filas": filas[:40], "total": len(filas), "mensaje": msg}
+    except Exception as e:
+        return {"ok": False, "mensaje": "Error al revisar la irregularidad torsional: %s" % e}
+
+
 def irregularidad_rigidez():
     """Verifica la irregularidad de rigidez (piso blando) leyendo 'Story Stiffness'.
     Criterio E.030 (por entrepiso, comparando con los superiores):
@@ -1594,6 +1767,10 @@ class Handler(BaseHTTPRequestHandler):
                 self._send(desbloquear())
             elif self.path == "/irregularidad_rigidez":
                 self._send(irregularidad_rigidez())
+            elif self.path == "/irregularidad_masa":
+                self._send(irregularidad_masa())
+            elif self.path == "/irregularidad_torsion":
+                self._send(irregularidad_torsion(payload.get("limite", 0.007)))
             elif self.path == "/modos":
                 self._send(set_modos(payload.get("modos_max"), payload.get("modos_min"),
                                      payload.get("correr", True)))
