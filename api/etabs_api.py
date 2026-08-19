@@ -21,7 +21,14 @@ import json
 import os
 import sys
 import mimetypes
+import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+# ETABS es una aplicacion WinForms y su API COM no es reentrante: dos hilos
+# llamandola a la vez pueden corromper su interfaz (ToolStrip) y tumbarla con
+# un IndexOutOfRangeException. El servidor es multihilo, asi que todo acceso a
+# SapModel se serializa con este candado.
+ETABS_LOCK = threading.RLock()
 
 HOST = "127.0.0.1"
 PORT = 8731
@@ -1205,17 +1212,20 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_GET(self):
         if self.path == "/ping":
-            SapModel, err = get_sapmodel()
-            locked = None
-            if err is None:
-                try:
-                    locked = bool(SapModel.GetModelIsLocked())
-                except Exception:
-                    locked = None
+            with ETABS_LOCK:
+                SapModel, err = get_sapmodel()
+                locked = None
+                if err is None:
+                    try:
+                        locked = bool(SapModel.GetModelIsLocked())
+                    except Exception:
+                        locked = None
             self._send({"ok": True, "etabs": err is None, "locked": locked,
                         "mensaje": "API activa" if err is None else err})
         elif self.path == "/niveles":
-            self._send(niveles())
+            with ETABS_LOCK:
+                datos = niveles()
+            self._send(datos)
         elif self.path == "/descargar":
             self._serve_installer()
         else:
@@ -1278,32 +1288,33 @@ class Handler(BaseHTTPRequestHandler):
         except json.JSONDecodeError:
             return self._send({"ok": False, "mensaje": "JSON inválido"}, 400)
 
-        if self.path == "/cargar_espectro":
-            self._send(cargar_espectro(payload.get("nombre"), payload.get("puntos", [])))
-        elif self.path == "/generar_masas":
-            self._send(generar_masas(
-                payload.get("uso"), payload.get("nombre_espectro"),
-                payload.get("modos_max", 9), payload.get("modos_min", 3),
-                payload.get("regular", True),
-                payload.get("rx", 1.0), payload.get("ry", 1.0)))
-        elif self.path == "/sistema_estructural":
-            self._send(sistema_estructural(payload.get("piso"), payload.get("pendulo", False)))
-        elif self.path == "/derivas":
-            self._send(derivas())
-        elif self.path == "/junta":
-            self._send(junta())
-        elif self.path == "/memoria":
-            self._send(memoria(payload.get("uso")))
-        elif self.path == "/masa":
-            self._send(masa_participativa(payload.get("caso")))
-        elif self.path == "/escalamiento":
-            self._send(escalamiento(payload))
-        elif self.path == "/desbloquear":
-            self._send(desbloquear())
-        elif self.path == "/irregularidad_rigidez":
-            self._send(irregularidad_rigidez())
-        else:
-            self._send({"ok": False, "mensaje": "Ruta no encontrada"}, 404)
+        with ETABS_LOCK:
+            if self.path == "/cargar_espectro":
+                self._send(cargar_espectro(payload.get("nombre"), payload.get("puntos", [])))
+            elif self.path == "/generar_masas":
+                self._send(generar_masas(
+                    payload.get("uso"), payload.get("nombre_espectro"),
+                    payload.get("modos_max", 9), payload.get("modos_min", 3),
+                    payload.get("regular", True),
+                    payload.get("rx", 1.0), payload.get("ry", 1.0)))
+            elif self.path == "/sistema_estructural":
+                self._send(sistema_estructural(payload.get("piso"), payload.get("pendulo", False)))
+            elif self.path == "/derivas":
+                self._send(derivas())
+            elif self.path == "/junta":
+                self._send(junta())
+            elif self.path == "/memoria":
+                self._send(memoria(payload.get("uso")))
+            elif self.path == "/masa":
+                self._send(masa_participativa(payload.get("caso")))
+            elif self.path == "/escalamiento":
+                self._send(escalamiento(payload))
+            elif self.path == "/desbloquear":
+                self._send(desbloquear())
+            elif self.path == "/irregularidad_rigidez":
+                self._send(irregularidad_rigidez())
+            else:
+                self._send({"ok": False, "mensaje": "Ruta no encontrada"}, 404)
 
     def log_message(self, *args):
         pass  # silencia el log por petición
