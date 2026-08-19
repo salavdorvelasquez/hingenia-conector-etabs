@@ -35,7 +35,7 @@ PORT = 8731
 
 # Version de ESPECTRA. Debe coincidir con MyAppVersion de installer/espectra.iss
 # y con el tag vX.Y.Z que dispara el release en GitHub Actions.
-APP_VERSION = "1.0.15"
+APP_VERSION = "1.0.16"
 
 # De aqui se leen las versiones publicadas para avisar de actualizaciones.
 GITHUB_REPO = "salavdorvelasquez/hingenia-conector-etabs"
@@ -1954,13 +1954,10 @@ def _run_gui(srv):
         val.pack(side="left")
         return dot, val, f
 
-    dot_srv, val_srv, _ = fila(body, "Servidor")
     dot_etabs, val_etabs, _ = fila(body, "ETABS")
     # Linea suave que separa el estado de las acciones.
     tk.Frame(body, bg="#e9e5e0", height=1).pack(fill="x", pady=(10, 0))
 
-    dot_srv.config(fg=GREEN)
-    val_srv.config(text=f"Activo · 127.0.0.1:{PORT}", fg=INK)
 
     # ---- Botones ----
     btns = tk.Frame(body, bg=BG)
@@ -2069,7 +2066,7 @@ def _run_gui(srv):
     btn_buscar.config(command=_actualizar)
     root.after(1500, _revisar_version)
 
-    nota = tk.Label(body, text="Deja esta ventana abierta mientras trabajas con ETABS.",
+    nota = tk.Label(body, text=f"Escuchando en 127.0.0.1:{PORT} · deja esta ventana abierta.",
                     fg=MUTED, bg=BG, font=("Segoe UI", 8))
     nota.pack(anchor="w", pady=(9, 0))
 
