@@ -35,7 +35,7 @@ PORT = 8731
 
 # Version de ESPECTRA. Debe coincidir con MyAppVersion de installer/espectra.iss
 # y con el tag vX.Y.Z que dispara el release en GitHub Actions.
-APP_VERSION = "1.0.6"
+APP_VERSION = "1.0.7"
 
 # De aqui se leen las versiones publicadas para avisar de actualizaciones.
 GITHUB_REPO = "salavdorvelasquez/hingenia-conector-etabs"
@@ -623,6 +623,58 @@ def _clasificar_sistema(pct):
     return "Pórticos", 8
 
 
+def _contar_muros_concreto(SapModel):
+    """Cuantos objetos area son muros (orientacion Wall) de material concreto.
+
+    Sirve para saber si un modelo sin fuerzas de pier es simplemente aporticado
+    o si tiene muros a los que les falta la etiqueta de pier.
+    """
+    try:
+        mats, concretos = set(), set()
+        mr = SapModel.PropMaterial.GetNameList()
+        for m in (list(mr[1]) if len(mr) >= 2 and mr[1] else []):
+            mats.add(m)
+            try:
+                gm = SapModel.PropMaterial.GetMaterial(m)
+                t = gm[0] if isinstance(gm, (list, tuple)) else gm
+                if int(t) == 2:
+                    concretos.add(m)
+            except Exception:
+                continue
+
+        sec_conc = {}
+
+        def es_concreto(sec):
+            if sec in sec_conc:
+                return sec_conc[sec]
+            mn = None
+            try:
+                gw = SapModel.PropArea.GetWall(sec)
+                cand = [x for x in gw if isinstance(x, str) and x in mats]
+                mn = cand[0] if cand else None
+            except Exception:
+                mn = None
+            sec_conc[sec] = bool(mn and mn in concretos)
+            return sec_conc[sec]
+
+        n = 0
+        res = SapModel.AreaObj.GetNameList()
+        for nm in (list(res[1]) if len(res) >= 2 and res[1] else []):
+            try:
+                o = SapModel.AreaObj.GetDesignOrientation(nm)
+                if int(o[0] if isinstance(o, (list, tuple)) else o) != 1:
+                    continue
+                pr = SapModel.AreaObj.GetProperty(nm)
+                sec = pr[0] if isinstance(pr, (list, tuple)) else pr
+                if es_concreto(sec):
+                    n += 1
+            except Exception:
+                continue
+        return n
+    except Exception:
+        return 0
+
+
 def _albanileria_por_direccion(SapModel):
     """Devuelve {'X': bool, 'Y': bool}: si hay muros de albañilería (material NO
     de concreto) que actúan en cada dirección, identificados por geometría
@@ -730,7 +782,11 @@ def sistema_estructural(piso=None, pendulo=False):
         # Sin piers el cortante de muros es cero y la clasificacion da Porticos,
         # que es justo lo que corresponde a un modelo sin muros. Se avisa por si
         # el usuario si tiene muros y lo que falta es asignarles el pier.
+        # Sin muros de concreto no hay nada que etiquetar: el sistema es de
+        # porticos y no procede pedir piers. Solo se pide si los muros existen.
         sin_piers = not pier
+        muros_concreto = _contar_muros_concreto(SapModel) if sin_piers else None
+        faltan_piers = bool(sin_piers and muros_concreto)
         # Si existe un pier 'TODO' (agregado), se usa solo ese; si no, se suman todos.
         usar_todo = any(r.get("Pier") == "TODO" for r in pier)
 
@@ -807,11 +863,14 @@ def sistema_estructural(piso=None, pendulo=False):
                 m["sistema"] = m["sistema"] + " + Albañilería (Art. 22.2)"
 
         origen = "resultados existentes" if reuso else "análisis ejecutado"
-        if sin_piers:
-            origen += " · sin muros de concreto con pier asignado"
+        if faltan_piers:
+            origen += " · hay muros de concreto sin pier asignado"
+        elif sin_piers:
+            origen += " · el modelo no tiene muros de concreto"
         return {"ok": True, "direcciones": direcciones, "detalle": detalle,
                 "nivel": piso_base, "pendulo": bool(pendulo), "albanileria": alb,
-                "sin_piers": sin_piers,
+                "sin_piers": sin_piers, "faltan_piers": faltan_piers,
+                "muros_concreto": muros_concreto,
                 "mensaje": f"Nivel {piso_base} — X: {direcciones['X']['sistema']} "
                            f"(R0={direcciones['X']['R0']}); Y: {direcciones['Y']['sistema']} "
                            f"(R0={direcciones['Y']['R0']}) · {origen}."}
