@@ -2,15 +2,15 @@
 ;  ESPECTRA - Instalador (Inno Setup)
 ;  Asistente gráfico con pantalla de presentación de marca.
 ;  Muestra primero un diseño bonito con logos ESPECTRA + Hingenia
-;  y crédito a Ingeniero Abel Julcarima.
+;  y crédito al Ingeniero Abel Max Julcarima Espíritu.
 ;
 ;  Compilar con: installer\build_installer.bat
 ;  El CI (release.yml) genera los assets automáticamente.
 ; ============================================================================
 
 #define MyAppName "ESPECTRA"
-#define MyAppVersion "1.0.4"
-#define MyAppPublisher "ESPECTRA"
+#define MyAppVersion "1.0.5"
+#define MyAppPublisher "Ing. Abel Max Julcarima Espíritu"
 #define MyAppExeName "ESPECTRA.exe"
 
 [Setup]

@@ -31,7 +31,7 @@ jobs:
       - name: Generate ESPECTRA icon (espectra.ico + espectra.png)
         run: python installer/make_icon.py
 
-      - name: Generate installer presentation graphics (ESPECTRA + Hingenia + crédito Ingeniero Abel Julcarima)
+      - name: Generate installer presentation graphics (ESPECTRA + Hingenia + crédito Ing. Abel Max Julcarima Espíritu)
         run: python installer/make_installer_graphics.py
 
       - name: Build ESPECTRA.exe with PyInstaller

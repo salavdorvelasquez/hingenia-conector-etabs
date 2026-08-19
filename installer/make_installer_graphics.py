@@ -2,7 +2,7 @@
 """
 Genera los gráficos de branding para el instalador ESPECTRA-Setup.exe
 - Pantalla de presentación inicial (presentation.png) con logos ESPECTRA + Hingenia
-  y crédito a Ingeniero Abel Julcarima.
+  y crédito al Ingeniero Abel Max Julcarima Espíritu.
 - Banner lateral para el wizard (wizard_banner.png)
 - Small image para la esquina superior del wizard.
 
@@ -126,7 +126,7 @@ def create_presentation_image():
     draw.text((text_x, hingenia_y), "HINGENIA", font=get_font(19, bold=True), fill=C1)
 
     # Crédito principal - centrado más abajo
-    credit_text = "Ingeniero Abel Julcarima"
+    credit_text = "Ing. Abel Max Julcarima Espíritu"
     # Calcular centro para el crédito
     bbox = draw.textbbox((0, 0), credit_text, font=font_credit)
     credit_width = bbox[2] - bbox[0]
@@ -186,8 +186,8 @@ def create_wizard_banner():
 
     font_tiny = get_font(10)
     draw.text((22, 196), "Con Hingenia", font=font_tiny, fill=C1)
-    draw.text((22, 212), "Ingeniero Abel", font=font_tiny, fill=MUTED)
-    draw.text((22, 226), "Julcarima", font=font_tiny, fill=MUTED)
+    draw.text((22, 212), "Ing. Abel Max", font=font_tiny, fill=MUTED)
+    draw.text((22, 226), "Julcarima Espíritu", font=font_tiny, fill=MUTED)
 
     return canvas
 

@@ -33,6 +33,15 @@ ETABS_LOCK = threading.RLock()
 HOST = "127.0.0.1"
 PORT = 8731
 
+# Version de ESPECTRA. Debe coincidir con MyAppVersion de installer/espectra.iss
+# y con el tag vX.Y.Z que dispara el release en GitHub Actions.
+APP_VERSION = "1.0.5"
+
+# De aqui se leen las versiones publicadas para avisar de actualizaciones.
+GITHUB_REPO = "salavdorvelasquez/hingenia-conector-etabs"
+RELEASE_API = "https://api.github.com/repos/%s/releases/latest" % GITHUB_REPO
+INSTALADOR_ASSET = "ESPECTRA-Setup.exe"
+
 
 # ----------------------------------------------------------------------------
 # Ubicación de la carpeta "web" (sirve los archivos estáticos de la app).
@@ -47,6 +56,96 @@ def _base_dir():
 
 
 WEB_DIR = os.path.join(_base_dir(), "web")
+
+
+# ----------------------------------------------------------------------------
+# Actualizaciones: se consulta la ultima release publicada en GitHub y, si hay
+# una mas nueva, se descarga su instalador y se lanza. ESPECTRA se cierra para
+# que el instalador pueda reemplazar el .exe en uso.
+# ----------------------------------------------------------------------------
+def _version_tupla(txt):
+    """'v1.0.10' -> (1, 0, 10). Lo que no sea numero se ignora."""
+    partes = []
+    for trozo in str(txt).lstrip("vV").split("."):
+        num = ""
+        for ch in trozo:
+            if ch.isdigit():
+                num += ch
+            else:
+                break
+        partes.append(int(num) if num else 0)
+    while len(partes) < 3:
+        partes.append(0)
+    return tuple(partes[:3])
+
+
+def buscar_actualizacion(timeout=6):
+    """Devuelve {'hay': bool, 'version': str, 'url': str} o {'hay': False, 'error': str}.
+
+    Nunca lanza: si no hay internet o GitHub no responde, se informa y ya.
+    """
+    import urllib.request
+    try:
+        req = urllib.request.Request(
+            RELEASE_API,
+            headers={"Accept": "application/vnd.github+json",
+                     "User-Agent": "ESPECTRA/%s" % APP_VERSION},
+        )
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            datos = json.loads(r.read().decode("utf-8"))
+    except Exception as e:
+        return {"hay": False, "error": str(e)}
+
+    tag = datos.get("tag_name") or ""
+    if not tag:
+        return {"hay": False, "error": "La release publicada no tiene tag."}
+
+    url = ""
+    for asset in datos.get("assets") or []:
+        if asset.get("name") == INSTALADOR_ASSET:
+            url = asset.get("browser_download_url") or ""
+            break
+
+    hay = _version_tupla(tag) > _version_tupla(APP_VERSION)
+    return {"hay": bool(hay and url), "version": tag.lstrip("vV"),
+            "url": url, "notas": datos.get("html_url") or ""}
+
+
+def descargar_e_instalar(url, progreso=None):
+    """Baja el instalador a la carpeta temporal y lo ejecuta.
+
+    'progreso' es un callable(texto) opcional para ir contando en la ventana.
+    Devuelve (True, ruta) o (False, mensaje de error).
+    """
+    import tempfile
+    import urllib.request
+    destino = os.path.join(tempfile.gettempdir(), INSTALADOR_ASSET)
+    try:
+        if progreso:
+            progreso("Descargando la actualizacion...")
+        req = urllib.request.Request(
+            url, headers={"User-Agent": "ESPECTRA/%s" % APP_VERSION})
+        with urllib.request.urlopen(req, timeout=60) as r, open(destino, "wb") as f:
+            total = int(r.headers.get("Content-Length") or 0)
+            bajado = 0
+            while True:
+                trozo = r.read(65536)
+                if not trozo:
+                    break
+                f.write(trozo)
+                bajado += len(trozo)
+                if progreso and total:
+                    progreso("Descargando... %d %%" % int(bajado * 100 / total))
+    except Exception as e:
+        return False, "No se pudo descargar: %s" % e
+
+    try:
+        if progreso:
+            progreso("Abriendo el instalador...")
+        os.startfile(destino)  # noqa: S606 - instalador firmado por nosotros
+    except Exception as e:
+        return False, "Se descargo en %s pero no se pudo abrir: %s" % (destino, e)
+    return True, destino
 
 
 def _installer_path():
@@ -1323,6 +1422,7 @@ class Handler(BaseHTTPRequestHandler):
                     except Exception:
                         locked = None
             self._send({"ok": True, "etabs": err is None, "locked": locked,
+                        "version": APP_VERSION,
                         "mensaje": "API activa" if err is None else err})
         elif self.path == "/niveles":
             with ETABS_LOCK:
@@ -1332,6 +1432,12 @@ class Handler(BaseHTTPRequestHandler):
             with ETABS_LOCK:
                 datos = get_modos()
             self._send(datos)
+        elif self.path == "/actualizacion":
+            # No toca ETABS: fuera del candado para no bloquear el modelo.
+            info = buscar_actualizacion()
+            info["ok"] = True
+            info["actual"] = APP_VERSION
+            self._send(info)
         elif self.path == "/descargar":
             self._serve_installer()
         else:
@@ -1530,6 +1636,10 @@ def _run_gui(srv):
                      font=("Segoe UI", 19, "bold"))
     head.create_text(101, 68, text="Análisis sísmico · E.030 (2026)", anchor="w",
                      fill="white", font=("Segoe UI", 9))
+    head.create_text(W - 18, 40, text="v" + APP_VERSION, anchor="e",
+                     fill="white", font=("Segoe UI", 10, "bold"))
+    head.create_text(W - 18, 68, text="Ing. Abel Max Julcarima Espíritu", anchor="e",
+                     fill="#ffe6d8", font=("Segoe UI", 8))
 
     body = tk.Frame(root, bg=BG)
     body.pack(fill="both", expand=True, padx=22, pady=(16, 18))
@@ -1548,6 +1658,8 @@ def _run_gui(srv):
 
     dot_srv, val_srv = fila(body, "Servidor")
     dot_etabs, val_etabs = fila(body, "ETABS")
+    dot_ver, val_ver = fila(body, "Versión")
+    val_ver.config(text=APP_VERSION + " · buscando actualizaciones…")
 
     dot_srv.config(fg=GREEN)
     val_srv.config(text=f"Activo · 127.0.0.1:{PORT}", fg=INK)
@@ -1583,8 +1695,62 @@ def _run_gui(srv):
 
     mk_btn(btns, "Detener", detener, False).pack(side="left", padx=(10, 0))
 
-    tk.Label(body, text="Deja esta ventana abierta mientras trabajas con ETABS.",
-             fg=MUTED, bg=BG, font=("Segoe UI", 8)).pack(anchor="w", pady=(14, 0))
+    # ---- Actualizaciones ------------------------------------------------
+    # La comprobacion va en un hilo aparte: si no hay internet, la ventana no
+    # se queda colgada esperando a GitHub.
+    nueva = {"url": "", "version": ""}
+
+    def _instalar_actualizacion():
+        btn_upd.config(state="disabled", text="Descargando…")
+
+        def _worker():
+            ok, res = descargar_e_instalar(
+                nueva["url"],
+                progreso=lambda t: root.after(0, lambda: val_ver.config(text=t, fg=INK)))
+            if ok:
+                # El instalador no puede reemplazar un .exe en uso: ESPECTRA se
+                # aparta para dejarlo trabajar.
+                root.after(1200, detener)
+            else:
+                root.after(0, lambda: (val_ver.config(text=res, fg=RED),
+                                       btn_upd.config(state="normal",
+                                                      text="Actualizar a " + nueva["version"])))
+
+        threading.Thread(target=_worker, daemon=True).start()
+
+    btn_upd = mk_btn(body, "Actualizar", _instalar_actualizacion, True)
+
+    def _revisar_version():
+        def _worker():
+            info = buscar_actualizacion()
+
+            def _pintar():
+                if info.get("hay"):
+                    nueva["url"] = info["url"]
+                    nueva["version"] = info["version"]
+                    dot_ver.config(fg=BRAND)
+                    val_ver.config(text="%s · hay la %s disponible" % (APP_VERSION, info["version"]),
+                                   fg=INK)
+                    btn_upd.config(text="Actualizar a " + info["version"])
+                    btn_upd.pack(fill="x", pady=(10, 0), before=nota)
+                elif info.get("error"):
+                    dot_ver.config(fg=MUTED)
+                    val_ver.config(text=APP_VERSION + " · sin conexión para comprobar", fg=MUTED)
+                else:
+                    dot_ver.config(fg=GREEN)
+                    val_ver.config(text=APP_VERSION + " · al día", fg=INK)
+
+            root.after(0, _pintar)
+
+        threading.Thread(target=_worker, daemon=True).start()
+        # Una vez al dia basta: esto no es algo que haya que sondear.
+        root.after(24 * 60 * 60 * 1000, _revisar_version)
+
+    root.after(1500, _revisar_version)
+
+    nota = tk.Label(body, text="Deja esta ventana abierta mientras trabajas con ETABS.",
+                    fg=MUTED, bg=BG, font=("Segoe UI", 8))
+    nota.pack(anchor="w", pady=(14, 0))
 
     # ---- Sondeo del estado de ETABS ----
     def refrescar():
@@ -1637,7 +1803,7 @@ def _run_gui(srv):
             pystray.MenuItem("Abrir en el navegador", lambda i, it: _abrir_navegador()),
             pystray.MenuItem("Detener", lambda i, it: root.after(0, detener)),
         )
-        return pystray.Icon("espectra", img, "ESPECTRA · E.030", menu)
+        return pystray.Icon("espectra", img, "ESPECTRA %s · E.030" % APP_VERSION, menu)
 
     tray["icon"] = _crear_tray()
     if tray["icon"] is not None:
