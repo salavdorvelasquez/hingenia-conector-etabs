@@ -35,7 +35,7 @@ PORT = 8731
 
 # Version de ESPECTRA. Debe coincidir con MyAppVersion de installer/espectra.iss
 # y con el tag vX.Y.Z que dispara el release en GitHub Actions.
-APP_VERSION = "1.0.18"
+APP_VERSION = "1.0.19"
 
 # De aqui se leen las versiones publicadas para avisar de actualizaciones.
 GITHUB_REPO = "salavdorvelasquez/hingenia-conector-etabs"
@@ -1150,8 +1150,9 @@ def masa_participativa(caso=None):
 # ----------------------------------------------------------------------------
 def _factor_c(t, tp, tl):
     """Factor de amplificación sísmica C (E.030), igual que en la web."""
-    if t < 0.2 * tp:
-        return 1 + 7.5 * (t / tp)
+    # C vale 2.5 en toda la meseta, desde T = 0 hasta Tp. La rampa
+    # 1 + 7.5*T/Tp que habia aqui es de la E.030 de 2003 y ya no esta en la
+    # norma vigente: metia una inclinacion inicial que no existe.
     if t <= tp:
         return 2.5
     if t < tl:
