@@ -35,7 +35,7 @@ PORT = 8731
 
 # Version de ESPECTRA. Debe coincidir con MyAppVersion de installer/espectra.iss
 # y con el tag vX.Y.Z que dispara el release en GitHub Actions.
-APP_VERSION = "1.0.19"
+APP_VERSION = "1.0.20"
 
 # De aqui se leen las versiones publicadas para avisar de actualizaciones.
 GITHUB_REPO = "salavdorvelasquez/hingenia-conector-etabs"
@@ -1171,6 +1171,9 @@ def escalamiento(p):
         rx = float(p.get("Rx") or 1); ry = float(p.get("Ry") or 1)
         uso = p.get("uso")
         regular = bool(p.get("regular"))
+        # Calcular y aplicar son dos cosas distintas: sin 'aplicar' solo se
+        # devuelven los numeros y el modelo se queda como esta.
+        aplicar = bool(p.get("aplicar", True))
         if not (Z and U and S and Tp and Tl):
             return {"ok": False, "mensaje": "Faltan parámetros (Z, U, S, Tp, Tl). Ábrelos en Datos."}
 
@@ -1221,27 +1224,28 @@ def escalamiento(p):
         vd_yp, f_yp = factor("(ZUCS g) SDYMasaX+", "FY", ry, vest_y)
         vd_ym, f_ym = factor("(ZUCS g) SDYMasaX-", "FY", ry, vest_y)
 
-        # Combos de DISEÑO a su valor base (1/R), sin escalar (100% + 30%).
-        combos_base = [
-            ("SDXMasaY+", "(ZUCS g) SDXMasaY+", rx, "(ZUCS g) SDY", ry),
-            ("SDXMasaY-", "(ZUCS g) SDXMasaY-", rx, "(ZUCS g) SDY", ry),
-            ("SDYMasaX+", "(ZUCS g) SDYMasaX+", ry, "(ZUCS g) SDX", rx),
-            ("SDYMasaX-", "(ZUCS g) SDYMasaX-", ry, "(ZUCS g) SDX", rx),
-        ]
-        for nombre, prin, rp, sec, rs in combos_base:
-            SapModel.RespCombo.Delete(nombre)
-            SapModel.RespCombo.Add(nombre, 3)
-            SapModel.RespCombo.SetCaseList(nombre, 0, prin, 1.0 / rp)
-            SapModel.RespCombo.SetCaseList(nombre, 0, sec, 0.30 / rs)
+        if aplicar:
+            # Combos de DISEÑO a su valor base (1/R), sin escalar (100% + 30%).
+            combos_base = [
+                ("SDXMasaY+", "(ZUCS g) SDXMasaY+", rx, "(ZUCS g) SDY", ry),
+                ("SDXMasaY-", "(ZUCS g) SDXMasaY-", rx, "(ZUCS g) SDY", ry),
+                ("SDYMasaX+", "(ZUCS g) SDYMasaX+", ry, "(ZUCS g) SDX", rx),
+                ("SDYMasaX-", "(ZUCS g) SDYMasaX-", ry, "(ZUCS g) SDX", rx),
+            ]
+            for nombre, prin, rp, sec, rs in combos_base:
+                SapModel.RespCombo.Delete(nombre)
+                SapModel.RespCombo.Add(nombre, 3)
+                SapModel.RespCombo.SetCaseList(nombre, 0, prin, 1.0 / rp)
+                SapModel.RespCombo.SetCaseList(nombre, 0, sec, 0.30 / rs)
 
-        # Cada factor (≥1) se aplica a SU caso dentro de la envolvente SISMO.
-        sismo = [("SISMO: XX", [("SDXMasaY+", f_xp), ("SDXMasaY-", f_xm)]),
-                 ("SISMO: YY", [("SDYMasaX+", f_yp), ("SDYMasaX-", f_ym)])]
-        for nombre, items in sismo:
-            SapModel.RespCombo.Delete(nombre)
-            SapModel.RespCombo.Add(nombre, 1)  # 1 = Envelope
-            for c, fdir in items:
-                SapModel.RespCombo.SetCaseList(nombre, 1, c, fdir)  # 1 = combinación · factor f
+            # Cada factor (≥1) se aplica a SU caso dentro de la envolvente SISMO.
+            sismo = [("SISMO: XX", [("SDXMasaY+", f_xp), ("SDXMasaY-", f_xm)]),
+                     ("SISMO: YY", [("SDYMasaX+", f_yp), ("SDYMasaX-", f_ym)])]
+            for nombre, items in sismo:
+                SapModel.RespCombo.Delete(nombre)
+                SapModel.RespCombo.Add(nombre, 1)  # 1 = Envelope
+                for c, fdir in items:
+                    SapModel.RespCombo.SetCaseList(nombre, 1, c, fdir)  # 1 = combinación · factor f
 
         casos = [
             {"caso": "SDXMasaY+", "dir": "X", "T": round(tx, 3), "C": round(cx, 3),
@@ -1253,9 +1257,12 @@ def escalamiento(p):
             {"caso": "SDYMasaX-", "dir": "Y", "T": round(ty, 3), "C": round(cy, 3),
              "Vest": round(vest_y, 2), "Vdin": round(vd_ym, 2), "f": round(f_ym, 3)},
         ]
+        factores = (f"X+={f_xp:.3f}, X-={f_xm:.3f}, "
+                    f"Y+={f_yp:.3f}, Y-={f_ym:.3f}")
+        cabeza = "Combos escalados en ETABS" if aplicar else "Factores calculados"
         return {"ok": True, "peso": round(peso, 2), "frac": frac, "casos": casos,
-                "mensaje": f"Escalamiento aplicado (4 factores): "
-                           f"X+={f_xp:.3f}, X-={f_xm:.3f}, Y+={f_yp:.3f}, Y-={f_ym:.3f}."}
+                "aplicado": aplicar,
+                "mensaje": f"{cabeza}: {factores}."}
     except Exception as e:
         return {"ok": False, "mensaje": f"Error en el escalamiento sísmico: {e}"}
 
