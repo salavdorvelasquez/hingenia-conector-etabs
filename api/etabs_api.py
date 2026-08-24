@@ -35,7 +35,7 @@ PORT = 8731
 
 # Version de ESPECTRA. Debe coincidir con MyAppVersion de installer/espectra.iss
 # y con el tag vX.Y.Z que dispara el release en GitHub Actions.
-APP_VERSION = "1.0.33"
+APP_VERSION = "1.0.34"
 
 # De aqui se leen las versiones publicadas para avisar de actualizaciones.
 GITHUB_REPO = "salavdorvelasquez/hingenia-conector-etabs"
@@ -1228,6 +1228,22 @@ def _factor_c(t, tp, tl):
     return 2.5 * (tp * tl) / (t * t)
 
 
+def _factor_c_estatico(t, tp, tl):
+    """C para la cortante estatica en la base del Art. 34.
+
+    E.030, Art. 18.3: "Para determinar la fuerza cortante basal del analisis
+    estatico, establecido por el articulo 34 de la presente Norma Tecnica, se
+    debe usar un valor de C igual a 2,5 en todo el rango de 0 <= T <= Tp".
+
+    O sea que la rampa inicial de la Tabla N 6 -que si va en el espectro del
+    analisis dinamico- aqui no se aplica: por debajo de Tp, C es 2.5 y ya. De Tp
+    en adelante mandan las ramas de siempre.
+    """
+    if t <= tp:
+        return 2.5
+    return _factor_c(t, tp, tl)
+
+
 def escalamiento(p):
     SapModel, err = get_sapmodel()
     if err:
@@ -1277,7 +1293,8 @@ def escalamiento(p):
         aviso_peso = _aviso_fuente_masa(peso, _peso_reacciones(reac, uso))
         # Cortante estática por dirección
         frac = 0.8 if regular else 0.9
-        cx = _factor_c(tx, Tp, Tl); cy = _factor_c(ty, Tp, Tl)
+        # Art. 18.3: para la cortante estatica, C = 2.5 en todo 0 <= T <= Tp.
+        cx = _factor_c_estatico(tx, Tp, Tl); cy = _factor_c_estatico(ty, Tp, Tl)
         vest_x = Z * U * cx * S / rx * peso
         vest_y = Z * U * cy * S / ry * peso
 
