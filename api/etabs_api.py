@@ -35,7 +35,7 @@ PORT = 8731
 
 # Version de ESPECTRA. Debe coincidir con MyAppVersion de installer/espectra.iss
 # y con el tag vX.Y.Z que dispara el release en GitHub Actions.
-APP_VERSION = "1.0.26"
+APP_VERSION = "1.0.27"
 
 # De aqui se leen las versiones publicadas para avisar de actualizaciones.
 GITHUB_REPO = "salavdorvelasquez/hingenia-conector-etabs"
@@ -2293,10 +2293,15 @@ def main():
             _log(f" [ERROR] El puerto {PORT} ya está en uso. Cierra la otra ventana.")
         return
 
-    # El servidor corre en un hilo (una sola vez); el navegador se abre una vez.
+    # El servidor corre en un hilo (una sola vez). El navegador NO se abre solo:
+    # ESPECTRA se deja abierto toda la sesion de trabajo y no tiene sentido que
+    # robe el foco con una pestaña nueva cada vez. Esta el boton "Abrir web" y
+    # la opcion del icono de la bandeja. Con ESPECTRA_ABRIR_WEB=1 vuelve a
+    # abrirse al arrancar.
     import threading
     threading.Thread(target=srv.serve_forever, daemon=True).start()
-    threading.Timer(0.6, _abrir_navegador).start()
+    if os.environ.get("ESPECTRA_ABRIR_WEB") == "1":
+        threading.Timer(0.6, _abrir_navegador).start()
 
     # Por defecto: ventana moderna. Con ESPECTRA_CONSOLE=1 fuerza consola.
     if os.environ.get("ESPECTRA_CONSOLE") == "1":
