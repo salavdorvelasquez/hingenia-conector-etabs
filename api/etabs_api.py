@@ -35,7 +35,7 @@ PORT = 8731
 
 # Version de ESPECTRA. Debe coincidir con MyAppVersion de installer/espectra.iss
 # y con el tag vX.Y.Z que dispara el release en GitHub Actions.
-APP_VERSION = "1.0.32"
+APP_VERSION = "1.0.33"
 
 # De aqui se leen las versiones publicadas para avisar de actualizaciones.
 GITHUB_REPO = "salavdorvelasquez/hingenia-conector-etabs"
@@ -1017,6 +1017,80 @@ def junta():
 
 
 # ----------------------------------------------------------------------------
+# Peso sismico P (Art. 31)
+# ----------------------------------------------------------------------------
+G_SISMO = 9.80665
+
+
+def _peso_sismico(SapModel):
+    """P = suma de los pesos de nivel, sin la base. Devuelve (P, filas, error).
+
+    ETABS da la masa de cada nivel en 'Mass Summary by Story', y ahi aparece
+    tambien una fila 'Base'. Esa masa esta en la cimentacion: no se mueve con el
+    sismo, no genera fuerza de inercia y no entra en P. Story.GetNameList()
+    devuelve justo los niveles sin la base, asi que sirve de filtro.
+
+    El peso es masa x g: la masa siempre viene en fuerza x s2 / longitud del
+    sistema de unidades activo, asi que multiplicar por g da fuerza en esas
+    mismas unidades, sean tonf o kN.
+
+    Lo que salga de aqui vale como P solo si la fuente de masa del modelo
+    (Define > Mass Source) es la combinacion del Art. 31. Por eso quien llama
+    compara con las reacciones en la base y avisa si no cuadran.
+    """
+    try:
+        _, masas = _leer_tabla(SapModel, "Mass Summary by Story")
+    except Exception as e:
+        return 0.0, [], "No se pudo leer 'Mass Summary by Story': %s" % e
+    if not masas:
+        return 0.0, [], ("No se pudo leer la masa por nivel. Define la fuente de masa "
+                         "en ETABS (Define > Mass Source) y vuelve a intentarlo.")
+    try:
+        pisos = [x for x in SapModel.Story.GetNameList()[1]]
+    except Exception:
+        pisos = []
+
+    filas, total = [], 0.0
+    for r in masas:
+        st = r.get("Story")
+        w = _abs_num(r.get("UX")) * G_SISMO
+        dentro = (st in pisos) if pisos else (str(st or "").strip().lower() != "base")
+        if dentro:
+            total += w
+        filas.append({"story": st, "wi": round(w, 2), "dentro": bool(dentro)})
+    if total <= 0:
+        return 0.0, filas, ("La masa por nivel salio cero. Revisa la fuente de masa en "
+                            "ETABS (Define > Mass Source).")
+    return total, filas, ""
+
+
+def _peso_reacciones(reac, uso):
+    """P por reacciones en la base: la via antigua, ahora solo para contrastar.
+
+    Incluye lo que este apoyado en el nivel base, que en P no deberia contar.
+    """
+    fz_d = reac("Dead", "FZ")
+    fz_l = reac("Live", "FZ")
+    fz_r = reac("Roof Live", "FZ")
+    if uso in ("Categoría C", "Art. 19.3"):
+        return fz_d + 0.25 * fz_l
+    return fz_d + 0.50 * fz_l + 0.25 * fz_r
+
+
+def _aviso_fuente_masa(peso, peso_reac):
+    """Si la masa del modelo y las cargas de gravedad no se parecen, la fuente
+    de masa no es la del Art. 31 y P no es de fiar. No se corrige nada: se dice."""
+    if peso <= 0 or peso_reac <= 0:
+        return ""
+    dif = abs(peso - peso_reac) / peso_reac
+    if dif <= 0.10:
+        return ""
+    return ("La masa del modelo (P = %.2f) y las cargas de gravedad del Art. 31 "
+            "(%.2f) se llevan un %.0f %%. Revisa Define > Mass Source: P sale de la "
+            "masa, que es la que uso el analisis modal." % (peso, peso_reac, dif * 100))
+
+
+# ----------------------------------------------------------------------------
 # 6) Memoria de cálculo: periodos, peso, cortantes y derivas (desde ETABS)
 # ----------------------------------------------------------------------------
 def memoria(uso=None):
@@ -1053,15 +1127,11 @@ def memoria(uso=None):
         def reac(caso, comp):
             return max([_abs_num(r.get(comp)) for r in base if r.get("OutputCase") == caso] or [0.0])
 
-        # Peso sísmico P según la fuente de masas (igual que en generar_masas):
-        # C / Art.19.3 → Dead + 0.25·Live; A/B → Dead + 0.50·Live + 0.25·Roof Live.
-        fz_dead = reac("Dead", "FZ")
-        fz_live = reac("Live", "FZ")
-        fz_roof = reac("Roof Live", "FZ")
-        if uso in ("Categoría C", "Art. 19.3"):
-            peso = fz_dead + 0.25 * fz_live
-        else:
-            peso = fz_dead + 0.50 * fz_live + 0.25 * fz_roof
+        # Peso sísmico P = suma de los pesos de nivel, sin la base (Art. 31).
+        peso, filas_peso, err_peso = _peso_sismico(SapModel)
+        if err_peso:
+            return {"ok": False, "mensaje": err_peso}
+        aviso_peso = _aviso_fuente_masa(peso, _peso_reacciones(reac, uso))
         vdin_x = max(reac("SDXMasaY+", "FX"), reac("SDXMasaY-", "FX"))
         vdin_y = max(reac("SDYMasaX+", "FY"), reac("SDYMasaX-", "FY"))
 
@@ -1079,7 +1149,8 @@ def memoria(uso=None):
         return {"ok": True,
                 "Tx": round(tx, 3), "Ty": round(ty, 3),
                 "ux": round(ux_max, 4), "uy": round(uy_max, 4),
-                "peso": round(peso, 2),
+                "peso": round(peso, 2), "peso_filas": filas_peso,
+                "aviso_peso": aviso_peso,
                 "Vdin_x": round(vdin_x, 3), "Vdin_y": round(vdin_y, 3),
                 "drift_x": round(dx, 6), "drift_y": round(dy, 6),
                 "mensaje": f"Tx={tx:.3f}s, Ty={ty:.3f}s · P={peso:.1f} · {origen}."}
@@ -1199,9 +1270,11 @@ def escalamiento(p):
         def reac(c, comp):
             return max([_abs_num(r.get(comp)) for r in base if r.get("OutputCase") == c] or [0.0])
 
-        fz_d = reac("Dead", "FZ"); fz_l = reac("Live", "FZ"); fz_r = reac("Roof Live", "FZ")
-        peso = (fz_d + 0.25 * fz_l) if uso in ("Categoría C", "Art. 19.3") \
-            else (fz_d + 0.50 * fz_l + 0.25 * fz_r)
+        # Peso sísmico P = suma de los pesos de nivel, sin la base (Art. 31).
+        peso, filas_peso, err_peso = _peso_sismico(SapModel)
+        if err_peso:
+            return {"ok": False, "mensaje": err_peso}
+        aviso_peso = _aviso_fuente_masa(peso, _peso_reacciones(reac, uso))
         # Cortante estática por dirección
         frac = 0.8 if regular else 0.9
         cx = _factor_c(tx, Tp, Tl); cy = _factor_c(ty, Tp, Tl)
@@ -1257,7 +1330,8 @@ def escalamiento(p):
         factores = (f"X+={f_xp:.3f}, X-={f_xm:.3f}, "
                     f"Y+={f_yp:.3f}, Y-={f_ym:.3f}")
         cabeza = "Combos escalados en ETABS" if aplicar else "Factores calculados"
-        return {"ok": True, "peso": round(peso, 2), "frac": frac, "casos": casos,
+        return {"ok": True, "peso": round(peso, 2), "peso_filas": filas_peso,
+                "aviso_peso": aviso_peso, "frac": frac, "casos": casos,
                 "aplicado": aplicar,
                 "mensaje": f"{cabeza}: {factores}."}
     except Exception as e:
@@ -1418,11 +1492,15 @@ def irregularidad_masa():
             if st and st not in orden:
                 orden.append(st)
 
+        # La tabla de ETABS da MASA; la columna se llama Wi y es un peso, asi que
+        # se pasa a fuerza con g. Las razones no cambian -es el mismo factor en
+        # el numerador y en el denominador- pero ahora estos Wi suman el peso
+        # sismico P del Art. 31, que es lo que se ve en Escalamiento.
         por_piso = {}
         for r in masas:
             st = r.get("Story")
             if st:
-                por_piso[st] = _abs_num(r.get("UX"))
+                por_piso[st] = _abs_num(r.get("UX")) * G_SISMO
 
         niveles = [st for st in orden if st in por_piso]
         if len(niveles) < 2:
@@ -1431,7 +1509,7 @@ def irregularidad_masa():
         filas, irregular = [], False
         for i, st in enumerate(niveles):
             w = por_piso.get(st, 0.0)
-            fila = {"story": st, "wi": round(w, 4),
+            fila = {"story": st, "wi": round(w, 2),
                     "razon_sup": None, "razon_inf": None, "v1": "", "v2": ""}
             if i > 0:                       # hay piso encima
                 ws = por_piso.get(niveles[i - 1], 0.0)
