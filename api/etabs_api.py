@@ -35,7 +35,7 @@ PORT = 8731
 
 # Version de ESPECTRA. Debe coincidir con MyAppVersion de installer/espectra.iss
 # y con el tag vX.Y.Z que dispara el release en GitHub Actions.
-APP_VERSION = "1.0.23"
+APP_VERSION = "1.0.24"
 
 # De aqui se leen las versiones publicadas para avisar de actualizaciones.
 GITHUB_REPO = "salavdorvelasquez/hingenia-conector-etabs"
@@ -87,9 +87,11 @@ def _version_tupla(txt):
 def buscar_actualizacion(timeout=8):
     """Devuelve {'hay': bool, 'version': str, 'url': str} o {'hay': False, 'error': str}.
 
-    Primero se mira a donde redirige la pagina de releases, que dice cual es la
-    ultima sin consumir cuota. Si eso falla se prueba la API, que limita a 60
-    peticiones por hora y por IP.
+    Se pregunta primero a la API, que es la que dice la verdad. La pagina web
+    /releases/latest se sirve cacheada y puede seguir apuntando a la version
+    anterior horas despues de publicar la nueva: si se le hace caso, ESPECTRA
+    dice "estas al dia" cuando no lo esta. Queda como recambio para cuando la
+    API no contesta, porque limita a 60 peticiones por hora y por IP.
 
     Nunca lanza: si no hay internet o GitHub no responde, se informa y ya.
     """
@@ -101,21 +103,21 @@ def buscar_actualizacion(timeout=8):
         return urllib.request.urlopen(req, timeout=timeout)
 
     tag, error = "", ""
-    # 1) Por redireccion: /releases/latest acaba en /releases/tag/vX.Y.Z
+    # 1) La API: da el tag real de la ultima release publicada.
     try:
-        with _pide(RELEASE_WEB) as r:
-            final = r.geturl() or ""
-        if "/tag/" in final:
-            tag = final.rsplit("/tag/", 1)[1].strip()
+        with _pide(RELEASE_API, {"Accept": "application/vnd.github+json"}) as r:
+            datos = json.loads(r.read().decode("utf-8"))
+        tag = (datos.get("tag_name") or "").strip()
     except Exception as e:
         error = str(e)
 
-    # 2) Si no, la API.
+    # 2) De recambio, la redireccion: /releases/latest acaba en /releases/tag/vX.Y.Z
     if not tag:
         try:
-            with _pide(RELEASE_API, {"Accept": "application/vnd.github+json"}) as r:
-                datos = json.loads(r.read().decode("utf-8"))
-            tag = (datos.get("tag_name") or "").strip()
+            with _pide(RELEASE_WEB) as r:
+                final = r.geturl() or ""
+            if "/tag/" in final:
+                tag = final.rsplit("/tag/", 1)[1].strip()
         except Exception as e:
             error = str(e)
 
