@@ -35,7 +35,7 @@ PORT = 8731
 
 # Version de ESPECTRA. Debe coincidir con MyAppVersion de installer/espectra.iss
 # y con el tag vX.Y.Z que dispara el release en GitHub Actions.
-APP_VERSION = "1.0.31"
+APP_VERSION = "1.0.32"
 
 # De aqui se leen las versiones publicadas para avisar de actualizaciones.
 GITHUB_REPO = "salavdorvelasquez/hingenia-conector-etabs"
@@ -700,6 +700,19 @@ def _albanileria_por_direccion(SapModel, muros):
         if d:
             res[d] = True
     return res
+
+
+def niveles():
+    """Lista los nombres de niveles (stories) del modelo, para que el usuario
+    elija en qué nivel revisar el sistema estructural."""
+    SapModel, err = get_sapmodel()
+    if err:
+        return {"ok": False, "mensaje": err}
+    try:
+        res = SapModel.Story.GetNameList()
+        return {"ok": True, "niveles": list(res[1])}
+    except Exception as e:
+        return {"ok": False, "mensaje": f"No se pudieron leer los niveles: {e}"}
 
 
 def sistema_estructural(piso=None, pendulo=False):
