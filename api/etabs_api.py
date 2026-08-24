@@ -35,7 +35,7 @@ PORT = 8731
 
 # Version de ESPECTRA. Debe coincidir con MyAppVersion de installer/espectra.iss
 # y con el tag vX.Y.Z que dispara el release en GitHub Actions.
-APP_VERSION = "1.0.24"
+APP_VERSION = "1.0.25"
 
 # De aqui se leen las versiones publicadas para avisar de actualizaciones.
 GITHUB_REPO = "salavdorvelasquez/hingenia-conector-etabs"
@@ -1669,73 +1669,66 @@ def irregularidad_rigidez():
             if m > DMAX.get(clave, 0.0):
                 DMAX[clave] = m
 
-        def por_direccion(direccion):
-            propios = [c for c, d in casos if d == direccion]
+        def por_caso(caso, direccion):
             filas = []
             for st in orden:
                 h = alturas.get(st, 0.0)
-                mejor = None
-                for c in propios:
-                    v, dr = V.get((c, direccion, st)), DAVG.get((c, direccion, st))
-                    if not v or not dr or h <= 0:
-                        continue
-                    delta = dr * h
-                    k = v / delta
-                    # La mas desfavorable es la de menor rigidez.
-                    if mejor is None or k < mejor["K"]:
-                        mejor = {"story": st, "caso": c, "V": v, "deriva": dr,
-                                 "delta": delta, "K": k,
-                                 "dmax": DMAX.get((c, direccion, st)) or 0.0}
-                if mejor:
-                    filas.append(mejor)
+                v, dr = V.get((caso, direccion, st)), DAVG.get((caso, direccion, st))
+                if not v or not dr or h <= 0:
+                    continue
+                delta = dr * h
+                filas.append({"story": st, "V": v, "deriva": dr, "delta": delta,
+                              "K": v / delta,
+                              "dmax": DMAX.get((caso, direccion, st)) or 0.0})
 
             Ks = [f["K"] for f in filas]      # de arriba (techo) hacia abajo
             blando = extrema = False
             salida = []
             for i, f in enumerate(filas):
                 rsup = rprom = None
-                estado = "-"
+                # Criterio 1: contra el entrepiso inmediato superior.
+                # Criterio 2: contra el promedio de los tres superiores, que
+                # solo tiene sentido a partir del cuarto entrepiso.
+                e1 = e2 = "-"
                 if i >= 1:
                     ksup = Ks[i - 1]
                     rsup = (f["K"] / ksup) if ksup else None
-                    # El promedio solo tiene sentido con tres entrepisos arriba.
-                    if i >= 3:
-                        prom = sum(Ks[i - 3:i]) / 3.0
-                        rprom = (f["K"] / prom) if prom else None
-                    ext = ((rsup is not None and rsup < 0.60) or
-                           (rprom is not None and rprom < 0.70))
-                    sof = ((rsup is not None and rsup < 0.70) or
-                           (rprom is not None and rprom < 0.80))
-                    if ext:
-                        extrema = True
-                        estado = "EXTREMA"
-                    elif sof:
-                        blando = True
-                        estado = "IRREGULAR"
-                    else:
-                        estado = "OK"
+                    if rsup is not None:
+                        e1 = "EXTREMA" if rsup < 0.60 else ("IRREGULAR" if rsup < 0.70 else "OK")
+                if i >= 3:
+                    prom = sum(Ks[i - 3:i]) / 3.0
+                    rprom = (f["K"] / prom) if prom else None
+                    if rprom is not None:
+                        e2 = "EXTREMA" if rprom < 0.70 else ("IRREGULAR" if rprom < 0.80 else "OK")
+                if "EXTREMA" in (e1, e2):
+                    extrema = True
+                elif "IRREGULAR" in (e1, e2):
+                    blando = True
                 salida.append({
-                    "story": f["story"], "caso": f["caso"],
+                    "story": f["story"],
                     "v": round(f["V"], 2), "h": round(alturas.get(f["story"], 0.0), 2),
                     "deriva": round(f["deriva"], 6), "delta": round(f["delta"], 5),
                     "dmax": round(f["dmax"], 6), "k": round(f["K"], 1),
                     "rsup": round(rsup, 3) if rsup is not None else None,
                     "rprom": round(rprom, 3) if rprom is not None else None,
-                    "estado": estado})
-            return {"dir": direccion, "filas": salida,
+                    "estado1": e1, "estado2": e2})
+            eje = "Y" if direccion == "X" else "X"      # la masa se desplaza en el otro eje
+            signo = caso[-1]
+            return {"titulo": "Direccion %s - Masa %s%s" % (direccion, eje, signo),
+                    "caso": caso, "dir": direccion, "filas": salida,
                     "irregular": blando or extrema, "extrema": extrema,
                     "Ia": 0.50 if extrema else (0.75 if blando else 1.0)}
 
-        dirs = [por_direccion("X"), por_direccion("Y")]
-        if not any(d["filas"] for d in dirs):
+        bloques = [por_caso(c, d) for c, d in casos]
+        if not any(b["filas"] for b in bloques):
             vistos = sorted({str(r.get("OutputCase")) for r in drifts})[:12]
             return {"ok": False, "mensaje": "No se encontraron los casos "
                     "(ZUCS g) SDXMasaY+ / SDYMasaX+ en las tablas de resultados. "
                     "Casos disponibles: %s. Vuelve a Datos y pulsa Cargar para "
                     "regenerarlos." % ", ".join(vistos)}
 
-        extrema = any(d["extrema"] for d in dirs)
-        irregular = any(d["irregular"] for d in dirs)
+        extrema = any(b["extrema"] for b in bloques)
+        irregular = any(b["irregular"] for b in bloques)
         Ia = 0.50 if extrema else (0.75 if irregular else 1.0)
         if extrema:
             msg = "Irregularidad extrema de rigidez (Ia = 0.50)."
@@ -1744,7 +1737,7 @@ def irregularidad_rigidez():
         else:
             msg = "Sin irregularidad de rigidez: ningun entrepiso baja de los limites."
         return {"ok": True, "Ia": Ia, "irregular": irregular, "extrema": extrema,
-                "direcciones": dirs,
+                "bloques": bloques,
                 "ruta": "Display > Show Tables > Analysis > Results > Structure Results > "
                         "Story Forces  y  Story Max Over Avg Drifts",
                 "mensaje": msg}
