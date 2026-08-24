@@ -35,7 +35,7 @@ PORT = 8731
 
 # Version de ESPECTRA. Debe coincidir con MyAppVersion de installer/espectra.iss
 # y con el tag vX.Y.Z que dispara el release en GitHub Actions.
-APP_VERSION = "1.0.28"
+APP_VERSION = "1.0.29"
 
 # De aqui se leen las versiones publicadas para avisar de actualizaciones.
 GITHUB_REPO = "salavdorvelasquez/hingenia-conector-etabs"
@@ -297,73 +297,6 @@ def cargar_espectro(nombre, puntos):
 # ----------------------------------------------------------------------------
 # 2) Generar masas, casos modales, espectrales y combinaciones (E.030)
 # ----------------------------------------------------------------------------
-def _asignar_pier_todo(SapModel):
-    """Asigna el pier 'TODO' SOLO a los muros de CONCRETO (material tipo Concrete),
-    para que Sistema estructural lea la cortante tomada por muros de concreto y
-    diferencie de la albañilería u otros materiales (que ETABS también reconoce
-    como muro). Es una escritura: solo corre durante la Carga (desbloqueado).
-    Devuelve el número de muros de concreto etiquetados."""
-    try:
-        SapModel.PierLabel.SetPier("TODO")  # define la etiqueta de pier
-    except Exception:
-        pass
-
-    # Conjunto de materiales y cuáles son de concreto (eMatType.Concrete = 2)
-    mats, concretos = set(), set()
-    try:
-        mr = SapModel.PropMaterial.GetNameList()
-        for m in (list(mr[1]) if len(mr) >= 2 and mr[1] else []):
-            mats.add(m)
-            try:
-                gm = SapModel.PropMaterial.GetMaterial(m)
-                t = gm[0] if isinstance(gm, (list, tuple)) else gm
-                if int(t) == 2:
-                    concretos.add(m)
-            except Exception:
-                continue
-    except Exception:
-        pass
-
-    # Cache sección de muro -> ¿es de concreto?
-    sec_conc = {}
-
-    def seccion_es_concreto(sec):
-        if sec in sec_conc:
-            return sec_conc[sec]
-        matname = None
-        try:
-            gw = SapModel.PropArea.GetWall(sec)
-            cand = [x for x in gw if isinstance(x, str) and x in mats]
-            matname = cand[0] if cand else None
-        except Exception:
-            matname = None
-        es = bool(matname and matname in concretos)
-        sec_conc[sec] = es
-        return es
-
-    try:
-        res = SapModel.AreaObj.GetNameList()
-        nombres = list(res[1]) if len(res) >= 2 and res[1] else []
-    except Exception:
-        nombres = []
-    n = 0
-    for nm in nombres:
-        try:
-            r = SapModel.AreaObj.GetDesignOrientation(nm)
-            tipo = r[0] if isinstance(r, (list, tuple)) else r
-            if int(tipo) != 1:        # no es muro (orientación Wall)
-                continue
-            pr = SapModel.AreaObj.GetProperty(nm)
-            sec = pr[0] if isinstance(pr, (list, tuple)) else pr
-            if not seccion_es_concreto(sec):
-                continue              # omite albañilería u otros materiales
-            SapModel.AreaObj.SetPier(nm, "TODO")
-            n += 1
-        except Exception:
-            continue
-    return n
-
-
 def generar_masas(uso, nombre_espectro, modos_max, modos_min, regular, rx=1.0, ry=1.0):
     SapModel, err = get_sapmodel()
     if err:
@@ -373,7 +306,7 @@ def generar_masas(uso, nombre_espectro, modos_max, modos_min, regular, rx=1.0, r
         nfe = nem = nwm = nim = 0
 
         # Etiqueta los muros con el pier 'TODO' (necesario para Sistema estructural).
-        n_muros = _asignar_pier_todo(SapModel)
+        n_muros, _ = _asignar_pier_todo(SapModel)
         TableVersion, fieldsKeys, NumberRecords, TableData = 1, [], 0, []
 
         # ---- Mass Source Definition ----
@@ -658,146 +591,178 @@ def _clasificar_sistema(pct):
     return "Pórticos", 8
 
 
-def _contar_muros_concreto(SapModel):
-    """Cuantos objetos area son muros (orientacion Wall) de material concreto.
+PIER_TODO = "TODO"
 
-    Sirve para saber si un modelo sin fuerzas de pier es simplemente aporticado
-    o si tiene muros a los que les falta la etiqueta de pier.
+
+def _inventario_muros(SapModel):
+    """Clasifica cada area de muro por el material de su seccion.
+
+    Devuelve {'concreto': [...], 'albanileria': [...], 'otros': [...]} con
+    (story, label, unique) por area, y ademas el material de cada una.
+
+    Se lee de las tablas y no objeto a objeto: son tres consultas en vez de una
+    por area, y ETABS ya trae ahi el tipo de material -Concrete, Masonry- que es
+    justo lo que distingue un muro de concreto de uno de albanileria.
     """
+    inv = {"concreto": [], "albanileria": [], "otros": []}
     try:
-        mats, concretos = set(), set()
-        mr = SapModel.PropMaterial.GetNameList()
-        for m in (list(mr[1]) if len(mr) >= 2 and mr[1] else []):
-            mats.add(m)
-            try:
-                gm = SapModel.PropMaterial.GetMaterial(m)
-                t = gm[0] if isinstance(gm, (list, tuple)) else gm
-                if int(t) == 2:
-                    concretos.add(m)
-            except Exception:
-                continue
-
-        sec_conc = {}
-
-        def es_concreto(sec):
-            if sec in sec_conc:
-                return sec_conc[sec]
-            mn = None
-            try:
-                gw = SapModel.PropArea.GetWall(sec)
-                cand = [x for x in gw if isinstance(x, str) and x in mats]
-                mn = cand[0] if cand else None
-            except Exception:
-                mn = None
-            sec_conc[sec] = bool(mn and mn in concretos)
-            return sec_conc[sec]
-
-        n = 0
-        res = SapModel.AreaObj.GetNameList()
-        for nm in (list(res[1]) if len(res) >= 2 and res[1] else []):
-            try:
-                o = SapModel.AreaObj.GetDesignOrientation(nm)
-                if int(o[0] if isinstance(o, (list, tuple)) else o) != 1:
-                    continue
-                pr = SapModel.AreaObj.GetProperty(nm)
-                sec = pr[0] if isinstance(pr, (list, tuple)) else pr
-                if es_concreto(sec):
-                    n += 1
-            except Exception:
-                continue
-        return n
+        _, materiales = _leer_tabla(SapModel, "Material Properties - General")
+        _, secciones = _leer_tabla(SapModel, "Area Section Property Definitions - Summary")
+        _, areas = _leer_tabla(SapModel, "Area Assignments - Section Properties")
     except Exception:
-        return 0
+        return inv
+
+    tipo_de_material = {}
+    for r in materiales:
+        tipo_de_material[r.get("Material")] = str(r.get("Type") or "").strip().lower()
+
+    familia_de_seccion = {}
+    for r in secciones:
+        if str(r.get("Type") or "").strip().lower() != "wall":
+            continue
+        t = tipo_de_material.get(r.get("Material"), "")
+        if t == "concrete":
+            fam = "concreto"
+        elif t == "masonry":
+            fam = "albanileria"
+        else:
+            fam = "otros"
+        familia_de_seccion[r.get("Name")] = (fam, r.get("Material"))
+
+    for r in areas:
+        if str(r.get("PropType") or "").strip().lower() != "wall":
+            continue
+        fam, mat = familia_de_seccion.get(r.get("SectProp"), (None, None))
+        if not fam:
+            continue
+        inv[fam].append({"story": r.get("Story"), "label": r.get("Label"),
+                         "unique": r.get("UniqueName"), "seccion": r.get("SectProp"),
+                         "material": mat})
+    return inv
 
 
-def _albanileria_por_direccion(SapModel):
-    """Devuelve {'X': bool, 'Y': bool}: si hay muros de albañilería (material NO
-    de concreto) que actúan en cada dirección, identificados por geometría
-    (un muro que se extiende en X resiste en X). Para Art. 22.2."""
+def _asignar_pier_todo(SapModel, muros=None):
+    """Pone el pier TODO a cada muro de concreto. Devuelve (asignados, error).
+
+    No hace falta desbloquear el modelo: la etiqueta de pier es una agrupacion
+    de diseño y ETABS la acepta con los resultados ya calculados, asi que no se
+    pierde el analisis.
+    """
+    if muros is None:
+        muros = _inventario_muros(SapModel)["concreto"]
+    if not muros:
+        return 0, ""
+    try:
+        SapModel.PierLabel.SetPier(PIER_TODO)
+    except Exception:
+        pass  # si ya existe, mejor
+    n = 0
+    for m in muros:
+        nombre = m.get("unique")
+        if not nombre:
+            continue
+        try:
+            if int(SapModel.AreaObj.SetPier(str(nombre), PIER_TODO)) == 0:
+                n += 1
+        except Exception:
+            continue
+    if not n:
+        return 0, "No se pudo etiquetar ningun muro de concreto con el pier TODO."
+    return n, ""
+
+
+def _direccion_de_muro(SapModel, unique):
+    """'X' o 'Y' segun el lado largo del muro en planta, o None si no se sabe."""
+    try:
+        gp = SapModel.AreaObj.GetPoints(str(unique))
+        pts = list(gp[1]) if len(gp) >= 2 and gp[1] else []
+        xs, ys = [], []
+        for p in pts:
+            c = SapModel.PointObj.GetCoordCartesian(p)
+            xs.append(float(c[0]))
+            ys.append(float(c[1]))
+        if not xs:
+            return None
+        return "X" if (max(xs) - min(xs)) >= (max(ys) - min(ys)) else "Y"
+    except Exception:
+        return None
+
+
+def _albanileria_por_direccion(SapModel, muros):
+    """{'X': bool, 'Y': bool}: en que direcciones hay muros de albanileria.
+
+    Un muro solo aporta rigidez en su plano, asi que cuenta en la direccion de
+    su lado largo; en la corta se desprecia (Art. 22.2).
+    """
     res = {"X": False, "Y": False}
-    try:
-        mats, conc = set(), set()
-        mr = SapModel.PropMaterial.GetNameList()
-        for m in (list(mr[1]) if len(mr) >= 2 and mr[1] else []):
-            mats.add(m)
-            try:
-                gm = SapModel.PropMaterial.GetMaterial(m)
-                t = gm[0] if isinstance(gm, (list, tuple)) else gm
-                if int(t) == 2:
-                    conc.add(m)
-            except Exception:
-                continue
-        sec_mat = {}
-
-        def mat_de(sec):
-            if sec in sec_mat:
-                return sec_mat[sec]
-            mn = None
-            try:
-                gw = SapModel.PropArea.GetWall(sec)
-                cand = [x for x in gw if isinstance(x, str) and x in mats]
-                mn = cand[0] if cand else None
-            except Exception:
-                mn = None
-            sec_mat[sec] = mn
-            return mn
-
-        names = SapModel.AreaObj.GetNameList()
-        for nm in (list(names[1]) if len(names) >= 2 and names[1] else []):
-            try:
-                o = SapModel.AreaObj.GetDesignOrientation(nm)
-                if int(o[0] if isinstance(o, (list, tuple)) else o) != 1:
-                    continue
-                pr = SapModel.AreaObj.GetProperty(nm)
-                sec = pr[0] if isinstance(pr, (list, tuple)) else pr
-                mn = mat_de(sec)
-                if (not mn) or (mn in conc):
-                    continue  # desconocido o concreto → no es albañilería
-                gp = SapModel.AreaObj.GetPoints(nm)
-                pts = list(gp[1]) if len(gp) >= 2 and gp[1] else []
-                xs, ys = [], []
-                for p in pts:
-                    c = SapModel.PointObj.GetCoordCartesian(p)
-                    xs.append(c[0]); ys.append(c[1])
-                if not xs:
-                    continue
-                dx = max(xs) - min(xs); dy = max(ys) - min(ys)
-                res["X" if dx >= dy else "Y"] = True
-            except Exception:
-                continue
-    except Exception:
-        pass
+    for m in muros:
+        d = _direccion_de_muro(SapModel, m.get("unique"))
+        if d:
+            res[d] = True
     return res
 
 
-def niveles():
-    """Lista los nombres de niveles (stories) del modelo, para que el usuario
-    elija en qué nivel revisar el sistema estructural."""
-    SapModel, err = get_sapmodel()
-    if err:
-        return {"ok": False, "mensaje": err}
-    try:
-        res = SapModel.Story.GetNameList()
-        return {"ok": True, "niveles": list(res[1])}
-    except Exception as e:
-        return {"ok": False, "mensaje": f"No se pudieron leer los niveles: {e}"}
-
-
 def sistema_estructural(piso=None, pendulo=False):
+    """Clasifica el sistema de cada direccion segun el Art. 20 (Tabla N 8).
+
+    El camino depende de lo que tenga el modelo:
+
+    1. Solo columnas -ninguna area de muro-: es de porticos y no hay nada que
+       etiquetar. No se pide ningun pier.
+    2. Con muros, primero se mira el MATERIAL de cada uno. A los de concreto se
+       les pone el pier TODO para poder leer su cortante; a los de albanileria
+       no, porque su sistema no se decide por cortante.
+    3. El porcentaje se calcula con la cortante de los muros de CONCRETO (pier
+       TODO) sobre la cortante total del entrepiso, que incluye todo.
+    4. Si en una direccion hay albanileria, esa direccion pasa a R0 = 3 por el
+       Art. 22.2 -se elige el sistema de menor R-, sin mirar su cortante. Un
+       muro solo cuenta en la direccion de su lado largo: en la corta se
+       desprecia. El pendulo invertido (Art. 22.3) manda sobre todo con R0=2.5.
+    """
     SapModel, err = get_sapmodel()
     if err:
         return {"ok": False, "mensaje": err}
     try:
-        # Se usan las cuatro combinaciones D-, que son la condicion de diseño
-        # completa: 0.75 x (100 % de la direccion analizada + 30 % de la
-        # ortogonal). El 0.75 se simplifica al dividir cortante de muros entre
-        # cortante total, pero el 30 % ortogonal no, y por eso el porcentaje no
-        # coincide con el del caso espectral puro.
-        #
-        # Las otras dos familias son recambios para modelos que no las tengan:
-        # los combos de diseño SDXMasaY+ solo existen tras aplicar el
-        # escalamiento, y los casos (ZUCS g) estan desde que se carga el
-        # espectro. Se usa la primera que aparezca en las tablas.
+        # Solo lectura de resultados: el modelo debe estar analizado. La etiqueta
+        # de pier si se puede escribir con el modelo bloqueado, porque es una
+        # agrupacion de diseño y no invalida el analisis.
+        if not bool(SapModel.GetModelIsLocked()):
+            return {"ok": False, "mensaje": NO_ANALIZADO}
+
+        inv = _inventario_muros(SapModel)
+        n_conc, n_alb, n_otros = (len(inv["concreto"]), len(inv["albanileria"]),
+                                  len(inv["otros"]))
+        muros = {"concreto": n_conc, "albanileria": n_alb, "otros": n_otros}
+
+        # --- Caso 1: ni un muro. Porticos y se acaba. -----------------------
+        if not (n_conc or n_alb or n_otros):
+            fila = lambda d: {"caso": "-", "direccion": d, "v_muros": 0.0,
+                              "v_total": 0.0, "porcentaje": 0.0,
+                              "sistema": "Pórticos", "R0": 8,
+                              "albanileria": False, "pendulo": bool(pendulo)}
+            direcciones = {"X": fila("X"), "Y": fila("Y")}
+            if pendulo:
+                for d in direcciones:
+                    direcciones[d]["sistema"] = "Péndulo invertido (Art. 22.3)"
+                    direcciones[d]["R0"] = 2.5
+            return {"ok": True, "direcciones": direcciones, "detalle": [],
+                    "nivel": None, "pendulo": bool(pendulo),
+                    "albanileria": {"X": False, "Y": False}, "muros": muros,
+                    "solo_columnas": True, "piers": 0,
+                    "mensaje": "El modelo no tiene muros: sistema de pórticos "
+                               "en las dos direcciones (R0 = 8)."}
+
+        # --- Caso 2: hay muros. Los de concreto llevan el pier TODO. --------
+        piers, aviso_pier = 0, ""
+        if n_conc:
+            piers, aviso_pier = _asignar_pier_todo(SapModel, inv["concreto"])
+
+        alb = _albanileria_por_direccion(SapModel, inv["albanileria"])
+
+        # Los cuatro combos de deriva son la condicion de diseño completa:
+        # 0.75 x (100 % de la direccion analizada + 30 % de la ortogonal). Si el
+        # modelo no los tiene se prueba con los combos de diseño y luego con los
+        # casos espectrales.
         FAMILIAS = [
             {"X": ["D-SDXMasaY+", "D-SDXMasaY-"],
              "Y": ["D-SDYMasaX+", "D-SDYMasaX-"]},
@@ -807,59 +772,33 @@ def sistema_estructural(piso=None, pendulo=False):
              "Y": ["(ZUCS g) SDYMasaX+", "(ZUCS g) SDYMasaX-"]},
         ]
         todos = [c for f in FAMILIAS for lista in f.values() for c in lista]
-
-        # Que las tablas de salida traigan tanto los combos como los casos.
         for metodo in ("SetLoadCombinationsSelectedForDisplay",
                        "SetLoadCasesSelectedForDisplay"):
             try:
                 getattr(SapModel.DatabaseTables, metodo)(todos)
             except Exception:
-                pass  # si la firma difiere, las tablas pueden traer todo igualmente
+                pass
 
-        def leer_fuerzas():
-            # Sin muros de concreto no existe la tabla Pier Forces. No es un
-            # error: significa que ese nivel no tiene muros y el sistema es de
-            # porticos, asi que se sigue con la lista vacia.
-            try:
-                _, pf = _leer_tabla(SapModel, "Pier Forces")
-            except Exception:
-                pf = []
-            _, sf = _leer_tabla(SapModel, "Story Forces")
-            return pf, sf
+        try:
+            _, pier = _leer_tabla(SapModel, "Pier Forces")
+        except Exception:
+            pier = []
+        _, story = _leer_tabla(SapModel, "Story Forces")
 
-        # Solo lectura: el modelo debe estar analizado. NO se reasignan piers ni se
-        # corre/guarda. Se leen los muros con los piers que ya tengas definidos.
-        if not bool(SapModel.GetModelIsLocked()):
-            return {"ok": False, "mensaje": NO_ANALIZADO}
-        reuso = True
-        pier, story = leer_fuerzas()
-
-        # De las tres familias, la primera que aparezca en Story Forces.
         presentes = {r.get("OutputCase") for r in story}
         casos = None
         for f in FAMILIAS:
             if any(c in presentes for c in f["X"] + f["Y"]):
-                casos = {d: [c for c in lista if c in presentes] for d, lista in f.items()}
+                casos = {d: [c for c in lista if c in presentes]
+                         for d, lista in f.items()}
                 break
         if not casos or not casos.get("X") or not casos.get("Y"):
             vistos = sorted(x for x in presentes if x)[:12]
             return {"ok": False, "mensaje": "No se encontraron los casos de sismo con "
                     "excentricidad accidental. Casos en el modelo: %s. Vuelve a Datos y "
                     "pulsa Cargar." % ", ".join(vistos)}
-        # Sin piers el cortante de muros es cero y la clasificacion da Porticos,
-        # que es justo lo que corresponde a un modelo sin muros. Se avisa por si
-        # el usuario si tiene muros y lo que falta es asignarles el pier.
-        # Sin muros de concreto no hay nada que etiquetar: el sistema es de
-        # porticos y no procede pedir piers. Solo se pide si los muros existen.
-        sin_piers = not pier
-        muros_concreto = _contar_muros_concreto(SapModel) if sin_piers else None
-        faltan_piers = bool(sin_piers and muros_concreto)
-        # Si existe un pier 'TODO' (agregado), se usa solo ese; si no, se suman todos.
-        usar_todo = any(r.get("Pier") == "TODO" for r in pier)
 
-        # Nivel a revisar: el que indica el usuario (piso). Si no indica ninguno,
-        # se usa el piso base = donde el cortante acumulado (Bottom) es máximo.
-        # Tanto el cortante total como el de muros se miden en ESE mismo nivel.
+        # Nivel a revisar: el del usuario o el de mayor cortante acumulado.
         piso_base = piso or None
         if not piso_base:
             vmax = -1.0
@@ -870,22 +809,22 @@ def sistema_estructural(piso=None, pendulo=False):
                 if v > vmax:
                     vmax, piso_base = v, r.get("Story")
 
-        def v_total(caso, comp):  # cortante en la base, en el piso base
+        def v_total(caso, comp):
             vals = [_abs_num(r.get(comp)) for r in story
                     if r.get("OutputCase") == caso and r.get("Location") == "Bottom"
                     and r.get("Story") == piso_base]
             return max(vals) if vals else 0.0
 
-        def v_muros(caso):  # cortante de muros en el piso base
-            # Por pier se toma el MÁXIMO absoluto de sus filas (el espectro da + y - de
-            # igual magnitud; sumarlas duplicaría). Luego se suman los piers (o el TODO).
+        def v_muros(caso):
+            # Solo el pier TODO, que es el de los muros de concreto. Por pier se
+            # toma el maximo de sus filas -el espectro da + y - de igual
+            # magnitud y sumarlas duplicaria- y luego se suman los piers.
             por_v2, por_v3 = {}, {}
             for r in pier:
                 if (r.get("OutputCase") == caso and r.get("Story") == piso_base
-                        and r.get("Location") == "Bottom"):
+                        and r.get("Location") == "Bottom"
+                        and r.get("Pier") == PIER_TODO):
                     pn = r.get("Pier")
-                    if usar_todo and pn != "TODO":
-                        continue
                     por_v2[pn] = max(por_v2.get(pn, 0.0), _abs_num(r.get("V2")))
                     por_v3[pn] = max(por_v3.get(pn, 0.0), _abs_num(r.get("V3")))
             return max(sum(por_v2.values()), sum(por_v3.values()))
@@ -907,15 +846,14 @@ def sistema_estructural(piso=None, pendulo=False):
                 detalle.append(fila)
                 if mejor is None or pct > mejor["porcentaje"]:
                     mejor = fila
-            direcciones[d] = mejor
+            direcciones[d] = dict(mejor) if mejor else None
 
         if sin_datos:
             return {"ok": False, "mensaje": "Los casos %s no tienen cortante en el nivel %s. "
                     "Corre el analisis en ETABS y vuelve a intentarlo."
                     % (", ".join(casos["X"] + casos["Y"]), piso_base)}
 
-        # --- Art. 22: péndulo invertido (22.3) o albañilería en la dirección (22.2) ---
-        alb = _albanileria_por_direccion(SapModel)
+        # --- Art. 22: albanileria por direccion y pendulo invertido ---------
         for d in ("X", "Y"):
             m = direcciones.get(d)
             if not m:
@@ -926,24 +864,34 @@ def sistema_estructural(piso=None, pendulo=False):
                 m["sistema"] = "Péndulo invertido (Art. 22.3)"
                 m["R0"] = 2.5
             elif alb.get(d):
-                m["R0"] = min(m["R0"], 3)   # 22.2: se toma el menor R0 (albañilería = 3)
-                m["sistema"] = m["sistema"] + " + Albañilería (Art. 22.2)"
+                # No se decide por cortante: basta que haya albanileria en la
+                # direccion para quedarse con el menor R0 (Art. 22.2).
+                m["R0"] = min(m["R0"], 3)
+                m["sistema"] = "Albañilería (Art. 22.2)"
 
-        origen = "resultados existentes" if reuso else "análisis ejecutado"
-        if faltan_piers:
-            origen += " · hay muros de concreto sin pier asignado"
-        elif sin_piers:
-            origen += " · el modelo no tiene muros de concreto"
+        partes = []
+        if n_conc:
+            partes.append("%d de concreto" % n_conc)
+        if n_alb:
+            partes.append("%d de albañilería" % n_alb)
+        if n_otros:
+            partes.append("%d de otro material" % n_otros)
+        origen = "muros: " + ", ".join(partes)
+        if n_conc:
+            origen += " · %d etiquetados con el pier TODO" % piers
+        if aviso_pier:
+            origen += " · " + aviso_pier
+
         return {"ok": True, "direcciones": direcciones, "detalle": detalle,
                 "nivel": piso_base, "pendulo": bool(pendulo), "albanileria": alb,
+                "muros": muros, "solo_columnas": False, "piers": piers,
                 "casos": casos,
-                "sin_piers": sin_piers, "faltan_piers": faltan_piers,
-                "muros_concreto": muros_concreto,
-                "mensaje": f"Nivel {piso_base} — X: {direcciones['X']['sistema']} "
-                           f"(R0={direcciones['X']['R0']}); Y: {direcciones['Y']['sistema']} "
-                           f"(R0={direcciones['Y']['R0']}) · {origen}."}
+                "mensaje": "Nivel %s — X: %s (R0=%s); Y: %s (R0=%s) · %s."
+                           % (piso_base, direcciones["X"]["sistema"],
+                              direcciones["X"]["R0"], direcciones["Y"]["sistema"],
+                              direcciones["Y"]["R0"], origen)}
     except Exception as e:
-        return {"ok": False, "mensaje": f"Error al calcular el sistema estructural: {e}"}
+        return {"ok": False, "mensaje": "Error al calcular el sistema estructural: %s" % e}
 
 
 # ----------------------------------------------------------------------------
