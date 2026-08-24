@@ -35,7 +35,7 @@ PORT = 8731
 
 # Version de ESPECTRA. Debe coincidir con MyAppVersion de installer/espectra.iss
 # y con el tag vX.Y.Z que dispara el release en GitHub Actions.
-APP_VERSION = "1.0.34"
+APP_VERSION = "1.0.35"
 
 # De aqui se leen las versiones publicadas para avisar de actualizaciones.
 GITHUB_REPO = "salavdorvelasquez/hingenia-conector-etabs"
@@ -1109,11 +1109,19 @@ def memoria(uso=None):
             return {"ok": False, "mensaje": NO_ANALIZADO}
         reuso = True
 
-        # Periodos fundamentales: modo con mayor masa participante en X y en Y
+        # Periodos fundamentales: modo con mayor masa participante en X y en Y,
+        # dentro del caso modal SIN excentricidad accidental. La tabla trae un
+        # bloque por cada caso (Modal, ModalMasaX+, ...) y quedarse con el maximo
+        # de todos mezcla analisis distintos: el periodo salia del caso que mas
+        # participacion tuviera, no del de la estructura.
         _, modal = _leer_tabla(SapModel, "Modal Participating Mass Ratios")
+        casos_modales = {r.get("Case") for r in modal}
+        base_modal = "Modal" if "Modal" in casos_modales else None
         tx = ty = 0.0
         ux_max = uy_max = -1.0
         for r in modal:
+            if base_modal is not None and r.get("Case") != base_modal:
+                continue
             per = _abs_num(r.get("Period"))
             ux, uy = _abs_num(r.get("UX")), _abs_num(r.get("UY"))
             if ux > ux_max:
@@ -1272,13 +1280,28 @@ def escalamiento(p):
         if not bool(SapModel.GetModelIsLocked()):
             return {"ok": False, "mensaje": NO_ANALIZADO}
 
-        # Periodos fundamentales (modo de mayor masa por dirección)
+        # Cada combo tiene su propio caso modal: la excentricidad accidental
+        # mueve la masa y con ella el periodo. Antes se tomaba el modo de mayor
+        # participacion entre TODOS los casos, lo que mezcla analisis distintos
+        # y acababa dando el mismo periodo al + y al -.
         _, modal = _leer_tabla(SapModel, "Modal Participating Mass Ratios")
-        tx = ty = 0.0; uxm = uym = -1.0
-        for r in modal:
-            per = _abs_num(r.get("Period")); ux = _abs_num(r.get("UX")); uy = _abs_num(r.get("UY"))
-            if ux > uxm: uxm, tx = ux, per
-            if uy > uym: uym, ty = uy, per
+
+        def periodo(caso_modal, comp):
+            """Periodo del modo con mas masa efectiva en 'comp', dentro del caso."""
+            mejor, t = -1.0, 0.0
+            for r in modal:
+                if caso_modal is not None and r.get("Case") != caso_modal:
+                    continue
+                m = _abs_num(r.get(comp))
+                if m > mejor:
+                    mejor, t = m, _abs_num(r.get("Period"))
+            return t
+
+        def periodo_de(caso_modal, comp):
+            # Si el modelo no trae ese caso modal se usa el Modal de siempre, y
+            # si tampoco, lo que haya: mejor un periodo aproximado que ninguno.
+            return (periodo(caso_modal, comp) or periodo("Modal", comp)
+                    or periodo(None, comp))
 
         # Peso sísmico y cortante dinámico BASE (de los casos elásticos /R → idempotente)
         _, base = _leer_tabla(SapModel, "Base Reactions")
@@ -1291,25 +1314,29 @@ def escalamiento(p):
         if err_peso:
             return {"ok": False, "mensaje": err_peso}
         aviso_peso = _aviso_fuente_masa(peso, _peso_reacciones(reac, uso))
-        # Cortante estática por dirección
+
         frac = 0.8 if regular else 0.9
-        # Art. 18.3: para la cortante estatica, C = 2.5 en todo 0 <= T <= Tp.
-        cx = _factor_c_estatico(tx, Tp, Tl); cy = _factor_c_estatico(ty, Tp, Tl)
-        vest_x = Z * U * cx * S / rx * peso
-        vest_y = Z * U * cy * S / ry * peso
 
-        # CUATRO factores: el + y el - tienen cortante dinámica distinta, así que
-        # cada combo de diseño tiene su propio f = (frac·Vest_dir)/Vdin_combo  (≥ 1).
-        # Vdin de cada combo = reacción del caso elástico /R (base, idempotente).
-        def factor(elastico, comp, R, vest):
-            vd = reac(elastico, comp) / R
+        # Un combo, un caso modal, un periodo, su C y su V estatica. La V
+        # dinamica sale del caso elastico /R, que es idempotente: volver a
+        # escalar no cambia el resultado.
+        COMBOS = [
+            ("SDXMasaY+", "X", "ModalMasaY+", "UX", "FX", rx),
+            ("SDXMasaY-", "X", "ModalMasaY-", "UX", "FX", rx),
+            ("SDYMasaX+", "Y", "ModalMasaX+", "UY", "FY", ry),
+            ("SDYMasaX-", "Y", "ModalMasaX-", "UY", "FY", ry),
+        ]
+        casos, f_de = [], {}
+        for nombre, d, caso_modal, comp_m, comp_f, R in COMBOS:
+            t = periodo_de(caso_modal, comp_m)
+            # Art. 18.3: para la cortante estatica, C = 2.5 en todo 0 <= T <= Tp.
+            c = _factor_c_estatico(t, Tp, Tl)
+            vest = Z * U * c * S / R * peso
+            vd = reac("(ZUCS g) " + nombre, comp_f) / R
             f = max(1.0, (frac * vest / vd) if vd else 1.0)
-            return vd, f
-
-        vd_xp, f_xp = factor("(ZUCS g) SDXMasaY+", "FX", rx, vest_x)
-        vd_xm, f_xm = factor("(ZUCS g) SDXMasaY-", "FX", rx, vest_x)
-        vd_yp, f_yp = factor("(ZUCS g) SDYMasaX+", "FY", ry, vest_y)
-        vd_ym, f_ym = factor("(ZUCS g) SDYMasaX-", "FY", ry, vest_y)
+            f_de[nombre] = f
+            casos.append({"caso": nombre, "dir": d, "T": round(t, 3), "C": round(c, 3),
+                          "Vest": round(vest, 2), "Vdin": round(vd, 2), "f": round(f, 3)})
 
         if aplicar:
             # Combos de DISEÑO a su valor base (1/R), sin escalar (100% + 30%).
@@ -1326,26 +1353,17 @@ def escalamiento(p):
                 SapModel.RespCombo.SetCaseList(nombre, 0, sec, 0.30 / rs)
 
             # Cada factor (≥1) se aplica a SU caso dentro de la envolvente SISMO.
-            sismo = [("SISMO: XX", [("SDXMasaY+", f_xp), ("SDXMasaY-", f_xm)]),
-                     ("SISMO: YY", [("SDYMasaX+", f_yp), ("SDYMasaX-", f_ym)])]
+            sismo = [("SISMO: XX", [("SDXMasaY+", f_de["SDXMasaY+"]),
+                                    ("SDXMasaY-", f_de["SDXMasaY-"])]),
+                     ("SISMO: YY", [("SDYMasaX+", f_de["SDYMasaX+"]),
+                                    ("SDYMasaX-", f_de["SDYMasaX-"])])]
             for nombre, items in sismo:
                 SapModel.RespCombo.Delete(nombre)
                 SapModel.RespCombo.Add(nombre, 1)  # 1 = Envelope
                 for c, fdir in items:
                     SapModel.RespCombo.SetCaseList(nombre, 1, c, fdir)  # 1 = combinación · factor f
 
-        casos = [
-            {"caso": "SDXMasaY+", "dir": "X", "T": round(tx, 3), "C": round(cx, 3),
-             "Vest": round(vest_x, 2), "Vdin": round(vd_xp, 2), "f": round(f_xp, 3)},
-            {"caso": "SDXMasaY-", "dir": "X", "T": round(tx, 3), "C": round(cx, 3),
-             "Vest": round(vest_x, 2), "Vdin": round(vd_xm, 2), "f": round(f_xm, 3)},
-            {"caso": "SDYMasaX+", "dir": "Y", "T": round(ty, 3), "C": round(cy, 3),
-             "Vest": round(vest_y, 2), "Vdin": round(vd_yp, 2), "f": round(f_yp, 3)},
-            {"caso": "SDYMasaX-", "dir": "Y", "T": round(ty, 3), "C": round(cy, 3),
-             "Vest": round(vest_y, 2), "Vdin": round(vd_ym, 2), "f": round(f_ym, 3)},
-        ]
-        factores = (f"X+={f_xp:.3f}, X-={f_xm:.3f}, "
-                    f"Y+={f_yp:.3f}, Y-={f_ym:.3f}")
+        factores = ", ".join("%s=%.3f" % (c["caso"], c["f"]) for c in casos)
         cabeza = "Combos escalados en ETABS" if aplicar else "Factores calculados"
         return {"ok": True, "peso": round(peso, 2), "peso_filas": filas_peso,
                 "aviso_peso": aviso_peso, "frac": frac, "casos": casos,
