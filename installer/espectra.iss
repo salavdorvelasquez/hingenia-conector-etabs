@@ -9,7 +9,7 @@
 ; ============================================================================
 
 #define MyAppName "ESPECTRA"
-#define MyAppVersion "1.0.30"
+#define MyAppVersion "1.0.31"
 #define MyAppPublisher "Ing. Abel Max Julcarima Espíritu"
 #define MyAppExeName "ESPECTRA.exe"
 
@@ -143,7 +143,11 @@ begin
   // haber varios a la vez -uno por cada arranque- y basta que quede uno para
   // que el archivo esté en uso y el instalador acabe preguntando qué hacer.
   // El usuario no tiene por qué saber de esto, así que se resuelve solo.
-  Exec(ExpandConstant('{sys}\taskkill.exe'), '/F /T /IM ESPECTRA.exe',
+  //
+  // Sin /T a proposito: cuando la actualizacion se lanza desde el boton de
+  // ESPECTRA, este instalador es proceso HIJO suyo, y /T mata el arbol
+  // entero, con lo que se cerraba a si mismo antes de copiar nada.
+  Exec(ExpandConstant('{sys}\taskkill.exe'), '/F /IM ESPECTRA.exe',
        '', SW_HIDE, ewWaitUntilTerminated, Codigo);
   Sleep(900);
   Result := '';
