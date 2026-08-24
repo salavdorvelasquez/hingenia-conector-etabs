@@ -35,7 +35,7 @@ PORT = 8731
 
 # Version de ESPECTRA. Debe coincidir con MyAppVersion de installer/espectra.iss
 # y con el tag vX.Y.Z que dispara el release en GitHub Actions.
-APP_VERSION = "1.0.25"
+APP_VERSION = "1.0.26"
 
 # De aqui se leen las versiones publicadas para avisar de actualizaciones.
 GITHUB_REPO = "salavdorvelasquez/hingenia-conector-etabs"
@@ -788,14 +788,30 @@ def sistema_estructural(piso=None, pendulo=False):
     if err:
         return {"ok": False, "mensaje": err}
     try:
-        casos = {"X": ["SDXMasaY+", "SDXMasaY-"], "Y": ["SDYMasaX+", "SDYMasaX-"]}
-        todos = casos["X"] + casos["Y"]
+        # El sismo con excentricidad accidental vive en el modelo con tres
+        # nombres posibles, y no todos existen siempre: los combos de diseño
+        # SDXMasaY+ solo aparecen despues de aplicar el escalamiento, mientras
+        # que los casos espectrales (ZUCS g) estan desde que se carga el
+        # espectro. Se prueba en ese orden y se usa la primera familia que el
+        # modelo tenga. El sistema estructural es un porcentaje, asi que la
+        # escala del caso se simplifica y el resultado no depende de cual sea.
+        FAMILIAS = [
+            {"X": ["SDXMasaY+", "SDXMasaY-"],
+             "Y": ["SDYMasaX+", "SDYMasaX-"]},
+            {"X": ["(ZUCS g) SDXMasaY+", "(ZUCS g) SDXMasaY-"],
+             "Y": ["(ZUCS g) SDYMasaX+", "(ZUCS g) SDYMasaX-"]},
+            {"X": ["D-SDXMasaY+", "D-SDXMasaY-"],
+             "Y": ["D-SDYMasaX+", "D-SDYMasaX-"]},
+        ]
+        todos = [c for f in FAMILIAS for lista in f.values() for c in lista]
 
-        # Mostrar las combinaciones de diseño en las tablas de salida
-        try:
-            SapModel.DatabaseTables.SetLoadCombinationsSelectedForDisplay(todos)
-        except Exception:
-            pass  # si la firma difiere, las tablas pueden traer todo igualmente
+        # Que las tablas de salida traigan tanto los combos como los casos.
+        for metodo in ("SetLoadCombinationsSelectedForDisplay",
+                       "SetLoadCasesSelectedForDisplay"):
+            try:
+                getattr(SapModel.DatabaseTables, metodo)(todos)
+            except Exception:
+                pass  # si la firma difiere, las tablas pueden traer todo igualmente
 
         def leer_fuerzas():
             # Sin muros de concreto no existe la tabla Pier Forces. No es un
@@ -814,6 +830,19 @@ def sistema_estructural(piso=None, pendulo=False):
             return {"ok": False, "mensaje": NO_ANALIZADO}
         reuso = True
         pier, story = leer_fuerzas()
+
+        # De las tres familias, la primera que aparezca en Story Forces.
+        presentes = {r.get("OutputCase") for r in story}
+        casos = None
+        for f in FAMILIAS:
+            if any(c in presentes for c in f["X"] + f["Y"]):
+                casos = {d: [c for c in lista if c in presentes] for d, lista in f.items()}
+                break
+        if not casos or not casos.get("X") or not casos.get("Y"):
+            vistos = sorted(x for x in presentes if x)[:12]
+            return {"ok": False, "mensaje": "No se encontraron los casos de sismo con "
+                    "excentricidad accidental. Casos en el modelo: %s. Vuelve a Datos y "
+                    "pulsa Cargar." % ", ".join(vistos)}
         # Sin piers el cortante de muros es cero y la clasificacion da Porticos,
         # que es justo lo que corresponde a un modelo sin muros. Se avisa por si
         # el usuario si tiene muros y lo que falta es asignarles el pier.
@@ -878,9 +907,9 @@ def sistema_estructural(piso=None, pendulo=False):
             direcciones[d] = mejor
 
         if sin_datos:
-            return {"ok": False, "mensaje": "No se obtuvieron cortantes. Verifica que las "
-                    "combinaciones de diseño (SDXMasaY±, SDYMasaX±) existan y corre el "
-                    "análisis."}
+            return {"ok": False, "mensaje": "Los casos %s no tienen cortante en el nivel %s. "
+                    "Corre el analisis en ETABS y vuelve a intentarlo."
+                    % (", ".join(casos["X"] + casos["Y"]), piso_base)}
 
         # --- Art. 22: péndulo invertido (22.3) o albañilería en la dirección (22.2) ---
         alb = _albanileria_por_direccion(SapModel)
@@ -904,6 +933,7 @@ def sistema_estructural(piso=None, pendulo=False):
             origen += " · el modelo no tiene muros de concreto"
         return {"ok": True, "direcciones": direcciones, "detalle": detalle,
                 "nivel": piso_base, "pendulo": bool(pendulo), "albanileria": alb,
+                "casos": casos,
                 "sin_piers": sin_piers, "faltan_piers": faltan_piers,
                 "muros_concreto": muros_concreto,
                 "mensaje": f"Nivel {piso_base} — X: {direcciones['X']['sistema']} "
