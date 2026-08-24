@@ -35,7 +35,7 @@ PORT = 8731
 
 # Version de ESPECTRA. Debe coincidir con MyAppVersion de installer/espectra.iss
 # y con el tag vX.Y.Z que dispara el release en GitHub Actions.
-APP_VERSION = "1.0.27"
+APP_VERSION = "1.0.28"
 
 # De aqui se leen las versiones publicadas para avisar de actualizaciones.
 GITHUB_REPO = "salavdorvelasquez/hingenia-conector-etabs"
@@ -788,20 +788,23 @@ def sistema_estructural(piso=None, pendulo=False):
     if err:
         return {"ok": False, "mensaje": err}
     try:
-        # El sismo con excentricidad accidental vive en el modelo con tres
-        # nombres posibles, y no todos existen siempre: los combos de diseño
-        # SDXMasaY+ solo aparecen despues de aplicar el escalamiento, mientras
-        # que los casos espectrales (ZUCS g) estan desde que se carga el
-        # espectro. Se prueba en ese orden y se usa la primera familia que el
-        # modelo tenga. El sistema estructural es un porcentaje, asi que la
-        # escala del caso se simplifica y el resultado no depende de cual sea.
+        # Se usan las cuatro combinaciones D-, que son la condicion de diseño
+        # completa: 0.75 x (100 % de la direccion analizada + 30 % de la
+        # ortogonal). El 0.75 se simplifica al dividir cortante de muros entre
+        # cortante total, pero el 30 % ortogonal no, y por eso el porcentaje no
+        # coincide con el del caso espectral puro.
+        #
+        # Las otras dos familias son recambios para modelos que no las tengan:
+        # los combos de diseño SDXMasaY+ solo existen tras aplicar el
+        # escalamiento, y los casos (ZUCS g) estan desde que se carga el
+        # espectro. Se usa la primera que aparezca en las tablas.
         FAMILIAS = [
+            {"X": ["D-SDXMasaY+", "D-SDXMasaY-"],
+             "Y": ["D-SDYMasaX+", "D-SDYMasaX-"]},
             {"X": ["SDXMasaY+", "SDXMasaY-"],
              "Y": ["SDYMasaX+", "SDYMasaX-"]},
             {"X": ["(ZUCS g) SDXMasaY+", "(ZUCS g) SDXMasaY-"],
              "Y": ["(ZUCS g) SDYMasaX+", "(ZUCS g) SDYMasaX-"]},
-            {"X": ["D-SDXMasaY+", "D-SDXMasaY-"],
-             "Y": ["D-SDYMasaX+", "D-SDYMasaX-"]},
         ]
         todos = [c for f in FAMILIAS for lista in f.values() for c in lista]
 
