@@ -35,7 +35,7 @@ PORT = 8731
 
 # Version de ESPECTRA. Debe coincidir con MyAppVersion de installer/espectra.iss
 # y con el tag vX.Y.Z que dispara el release en GitHub Actions.
-APP_VERSION = "1.0.35"
+APP_VERSION = "1.0.36"
 
 # De aqui se leen las versiones publicadas para avisar de actualizaciones.
 GITHUB_REPO = "salavdorvelasquez/hingenia-conector-etabs"
@@ -2258,7 +2258,7 @@ def _run_gui(srv):
     btn_buscar.config(command=_actualizar)
     root.after(1500, _revisar_version)
 
-    nota = tk.Label(body, text=f"Escuchando en 127.0.0.1:{PORT} · deja esta ventana abierta.",
+    nota = tk.Label(body, text="Deja esta ventana abierta.",
                     fg=MUTED, bg=BG, font=("Segoe UI", 8))
     nota.pack(anchor="w", pady=(9, 0))
 
