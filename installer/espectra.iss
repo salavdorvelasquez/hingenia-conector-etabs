@@ -9,7 +9,7 @@
 ; ============================================================================
 
 #define MyAppName "ESPECTRA"
-#define MyAppVersion "1.0.29"
+#define MyAppVersion "1.0.30"
 #define MyAppPublisher "Ing. Abel Max Julcarima Espíritu"
 #define MyAppExeName "ESPECTRA.exe"
 
@@ -48,8 +48,11 @@ ArchitecturesInstallIn64BitMode=x64compatible
 
 ; Instala para toda la máquina (Archivos de programa) -> pide elevación una vez
 PrivilegesRequired=admin
-; Cierra la app si está corriendo durante una actualización
-CloseApplications=yes
+; Cierra la app si está corriendo durante una actualización. "force" termina
+; los procesos que no responden en vez de preguntar al usuario: ESPECTRA vive
+; en la bandeja y su ventana no siempre atiende el WM_CLOSE que manda Inno.
+CloseApplications=force
+RestartApplications=no
 
 [Languages]
 Name: "spanish"; MessagesFile: "compiler:Languages\Spanish.isl"
@@ -130,4 +133,18 @@ begin
   // Saltamos la página de bienvenida por defecto de Inno Setup.
   // La primera pantalla que ve el usuario es nuestra presentación con branding.
   Result := (PageID = wpWelcome);
+end;
+
+function PrepareToInstall(var NeedsRestart: Boolean): String;
+var
+  Codigo: Integer;
+begin
+  // Antes de copiar nada, se cierra cualquier ESPECTRA que siga vivo. Puede
+  // haber varios a la vez -uno por cada arranque- y basta que quede uno para
+  // que el archivo esté en uso y el instalador acabe preguntando qué hacer.
+  // El usuario no tiene por qué saber de esto, así que se resuelve solo.
+  Exec(ExpandConstant('{sys}\taskkill.exe'), '/F /T /IM ESPECTRA.exe',
+       '', SW_HIDE, ewWaitUntilTerminated, Codigo);
+  Sleep(900);
+  Result := '';
 end;
