@@ -35,7 +35,7 @@ PORT = 8731
 
 # Version de ESPECTRA. Debe coincidir con MyAppVersion de installer/espectra.iss
 # y con el tag vX.Y.Z que dispara el release en GitHub Actions.
-APP_VERSION = "1.0.21"
+APP_VERSION = "1.0.22"
 
 # De aqui se leen las versiones publicadas para avisar de actualizaciones.
 GITHUB_REPO = "salavdorvelasquez/hingenia-conector-etabs"
@@ -1582,10 +1582,21 @@ def irregularidad_torsion(limite=0.007):
 
 
 def irregularidad_rigidez():
-    """Verifica la irregularidad de rigidez (piso blando) leyendo 'Story Stiffness'.
-    Criterio E.030 (por entrepiso, comparando con los superiores):
-      - Irregular  (Ia=0.75): K_i < 0.70·K_sup   o   K_i < 0.80·prom(3 sup).
-      - Extrema    (Ia=0.50): K_i < 0.60·K_sup   o   K_i < 0.70·prom(3 sup)."""
+    """Rigidez de entrepiso por direccion: K = V / delta.
+
+    V es el cortante del entrepiso (Story Forces, en la base del piso) y delta
+    el desplazamiento relativo del entrepiso, que es lo que da la columna Avg
+    de 'Story Max Over Avg Drifts' (esa tabla devuelve desplazamientos, no
+    cocientes). Se usa Avg y no Max porque Max lo infla la torsion y un piso
+    excentrico pareceria blando sin serlo.
+
+    Se leen las cuatro combinaciones de deriva D-, y por direccion se toma en
+    cada entrepiso la K menor de sus dos combinaciones: la mas desfavorable.
+
+    Criterio E.030, comparando cada entrepiso con los de arriba:
+      - Piso blando   (Tabla N 11, Ia = 0.75): K < 0.70 K_sup  o  K < 0.80 prom(3 sup).
+      - Extrema       (Tabla N 13, Ia = 0.50): K < 0.60 K_sup  o  K < 0.70 prom(3 sup).
+    """
     SapModel, err = get_sapmodel()
     if err:
         return {"ok": False, "mensaje": err}
@@ -1593,96 +1604,144 @@ def irregularidad_rigidez():
         if not bool(SapModel.GetModelIsLocked()):
             return {"ok": False, "mensaje": NO_ANALIZADO}
 
-        # Fija las unidades a tonf, m, C (eUnits Ton_m_C = 12) para que la rigidez
-        # salga en tonf/m de forma consistente.
+        # tonf, m, C (eUnits Ton_m_C = 12): asi la rigidez sale en tonf/m.
         try:
             SapModel.SetPresentUnits(12)
         except Exception:
             pass
 
-        # ETABS no siempre computa 'Story Stiffness' (requiere diafragmas), así que
-        # la rigidez de entrepiso se calcula como K = V / δ, donde V es el cortante
-        # de entrepiso (Story Forces) y δ = desplazamiento RELATIVO del centro de
-        # masa del diafragma (igual que ETABS en su tabla 'Story Stiffness', método
-        # de fuerzas: K = V / (U_CM,i − U_CM,inferior)).
-        # Se usan las 4 combinaciones de deriva D- (incluyen la torsión accidental).
         combos = [("D-SDXMasaY+", "X"), ("D-SDXMasaY-", "X"),
                   ("D-SDYMasaX+", "Y"), ("D-SDYMasaX-", "Y")]
         try:
-            SapModel.DatabaseTables.SetLoadCombinationsSelectedForDisplay([c for c, _ in combos])
+            SapModel.DatabaseTables.SetLoadCombinationsSelectedForDisplay(
+                [c for c, _ in combos])
         except Exception:
             pass
 
         _, forces = _leer_tabla(SapModel, "Story Forces")
-        _, cmd = _leer_tabla(SapModel, "Diaphragm Center Of Mass Displacements")
+        _, drifts = _leer_tabla(SapModel, "Story Max Over Avg Drifts")
         _, sdef = _leer_tabla(SapModel, "Story Definitions")
-        if not forces or not cmd:
-            return {"ok": False, "mensaje": "No hay fuerzas de entrepiso ni desplazamientos del "
-                    "centro de masa. Verifica que el modelo esté analizado, tenga diafragma y "
-                    "existan las combinaciones de deriva D-SDXMasaY+ / D-SDYMasaX+."}
+        if not forces or not drifts:
+            return {"ok": False, "mensaje": "Faltan las tablas Story Forces o Story Max Over "
+                    "Avg Drifts. Corre el modelo y comprueba que existan las combinaciones "
+                    "D-SDXMasaY+ / D-SDYMasaX+."}
 
+        # Story Definitions viene del techo hacia abajo y no trae la base.
         orden = []
         for r in sdef:
-            s = r.get("Story")
-            if s not in orden:
-                orden.append(s)  # Story Definitions viene de arriba (techo) hacia abajo
+            st = r.get("Story")
+            if st and st not in orden:
+                orden.append(st)
 
-        def evaluar(combo, direccion):
-            comp = "VX" if direccion == "X" else "VY"
-            ucomp = "UX" if direccion == "X" else "UY"
-            V, U = {}, {}
-            for r in forces:
-                if r.get("OutputCase") != combo:
-                    continue
-                s = r.get("Story")
-                V[s] = max(V.get(s, 0.0), _abs_num(r.get(comp)))
-            for r in cmd:
-                if r.get("OutputCase") != combo:
-                    continue
-                s = r.get("Story")
-                U[s] = max(U.get(s, 0.0), _abs_num(r.get(ucomp)))  # despl. del CM (Max)
-            # entrepisos con datos, de arriba (techo) hacia abajo
-            sts = [s for s in orden if s in U and s in V]
-            datos = []  # [(story, K)]
-            for k, s in enumerate(sts):
-                u_inf = U[sts[k + 1]] if (k + 1) < len(sts) else 0.0  # piso inferior; base = 0
-                delta = U[s] - u_inf       # desplazamiento relativo del CM (entrepiso)
-                kk = (V[s] / delta) if delta > 0 else 0.0
-                if kk > 0:
-                    datos.append((s, kk))
-            Ks = [k for _, k in datos]
-            out, soft, extrema = [], False, False
-            for i, (s, k) in enumerate(datos):
+        # V por (combo, story). ETABS repite cada fila con StepType Max y Min y
+        # da el cortante arriba y abajo del piso: se queda el mayor valor.
+        V = {}
+        for r in forces:
+            caso = r.get("OutputCase")
+            st = r.get("Story")
+            if not caso or not st:
+                continue
+            for direccion, comp in (("X", "VX"), ("Y", "VY")):
+                v = _abs_num(r.get(comp))
+                clave = (caso, direccion, st)
+                if v > V.get(clave, 0.0):
+                    V[clave] = v
+
+        # delta por (combo, direccion, story), con el mayor Avg de las filas
+        # repetidas. Direction llega como "X"/"Y" o como "Diaph D1 X".
+        D, DMAX = {}, {}
+        for r in drifts:
+            caso = r.get("OutputCase")
+            st = r.get("Story")
+            dd = str(r.get("Direction") or "").strip()
+            if not caso or not st or not dd:
+                continue
+            direccion = dd[-1].upper()
+            if direccion not in ("X", "Y"):
+                continue
+            clave = (caso, direccion, st)
+            a = _abs_num(r.get("Avg"))
+            m = _abs_num(r.get("Max"))
+            if a > D.get(clave, 0.0):
+                D[clave] = a
+            if m > DMAX.get(clave, 0.0):
+                DMAX[clave] = m
+
+        def por_direccion(direccion):
+            casos = [c for c, d in combos if d == direccion]
+            filas = []
+            for st in orden:
+                mejor = None
+                for c in casos:
+                    v, delta = V.get((c, direccion, st)), D.get((c, direccion, st))
+                    if not v or not delta:
+                        continue
+                    k = v / delta
+                    # La mas desfavorable es la de menor rigidez.
+                    if mejor is None or k < mejor["K"]:
+                        mejor = {"story": st, "caso": c, "V": v, "delta": delta,
+                                 "dmax": DMAX.get((c, direccion, st)) or 0.0, "K": k}
+                if mejor:
+                    filas.append(mejor)
+
+            Ks = [f["K"] for f in filas]      # de arriba (techo) hacia abajo
+            blando = extrema = False
+            salida = []
+            for i, f in enumerate(filas):
                 rsup = rprom = None
-                estado = "—"
+                estado = "-"
                 if i >= 1:
                     ksup = Ks[i - 1]
-                    rsup = (k / ksup) if ksup else None
-                    # El promedio SOLO aplica si hay 3 entrepisos superiores; si no,
-                    # no se calcula (no hay con qué promediar).
+                    rsup = (f["K"] / ksup) if ksup else None
+                    # El promedio solo tiene sentido con tres entrepisos arriba.
                     if i >= 3:
                         prom = sum(Ks[i - 3:i]) / 3.0
-                        rprom = (k / prom) if prom else None
-                    falla_ext = (rsup is not None and rsup < 0.60) or (rprom is not None and rprom < 0.70)
-                    falla_soft = (rsup is not None and rsup < 0.70) or (rprom is not None and rprom < 0.80)
-                    if falla_ext:
-                        extrema = True; estado = "EXTREMA"
-                    elif falla_soft:
-                        soft = True; estado = "IRREGULAR"
+                        rprom = (f["K"] / prom) if prom else None
+                    ext = ((rsup is not None and rsup < 0.60) or
+                           (rprom is not None and rprom < 0.70))
+                    sof = ((rsup is not None and rsup < 0.70) or
+                           (rprom is not None and rprom < 0.80))
+                    if ext:
+                        extrema = True
+                        estado = "EXTREMA"
+                    elif sof:
+                        blando = True
+                        estado = "IRREGULAR"
                     else:
                         estado = "OK"
-                out.append({"story": s, "K": round(k, 2),
-                            "rsup": round(rsup, 3) if rsup is not None else None,
-                            "rprom": round(rprom, 3) if rprom is not None else None,
-                            "estado": estado})
-            Ia = 0.50 if extrema else (0.75 if soft else 1.0)
-            return {"caso": combo, "dir": direccion, "filas": out, "Ia": Ia,
-                    "irregular": soft or extrema, "extrema": extrema}
+                salida.append({
+                    "story": f["story"], "caso": f["caso"],
+                    "v": round(f["V"], 2), "delta": round(f["delta"], 6),
+                    "dmax": round(f["dmax"], 6), "k": round(f["K"], 1),
+                    "rsup": round(rsup, 3) if rsup is not None else None,
+                    "rprom": round(rprom, 3) if rprom is not None else None,
+                    "estado": estado})
+            return {"dir": direccion, "filas": salida,
+                    "irregular": blando or extrema, "extrema": extrema,
+                    "Ia": 0.50 if extrema else (0.75 if blando else 1.0)}
 
-        return {"ok": True, "casos": [evaluar(c, d) for c, d in combos],
-                "mensaje": "Irregularidad de rigidez (piso blando) evaluada · 4 casos D- · Tabla N° 11."}
+        dirs = [por_direccion("X"), por_direccion("Y")]
+        if not any(d["filas"] for d in dirs):
+            return {"ok": False, "mensaje": "No se pudo emparejar el cortante con el "
+                    "desplazamiento de ningun entrepiso. Revisa que las combinaciones D- "
+                    "esten en el modelo y que tenga diafragma."}
+
+        extrema = any(d["extrema"] for d in dirs)
+        irregular = any(d["irregular"] for d in dirs)
+        Ia = 0.50 if extrema else (0.75 if irregular else 1.0)
+        if extrema:
+            msg = "Irregularidad extrema de rigidez (Ia = 0.50)."
+        elif irregular:
+            msg = "Irregularidad de rigidez - piso blando (Ia = 0.75)."
+        else:
+            msg = "Sin irregularidad de rigidez: ningun entrepiso baja de los limites."
+        return {"ok": True, "Ia": Ia, "irregular": irregular, "extrema": extrema,
+                "direcciones": dirs,
+                "ruta": "Display > Show Tables > Analysis > Results > Structure Results > "
+                        "Story Forces  y  Story Max Over Avg Drifts",
+                "mensaje": msg}
     except Exception as e:
-        return {"ok": False, "mensaje": f"Error en irregularidad de rigidez: {e}"}
+        return {"ok": False, "mensaje": "Error en la irregularidad de rigidez: %s" % e}
 
 
 # ----------------------------------------------------------------------------
