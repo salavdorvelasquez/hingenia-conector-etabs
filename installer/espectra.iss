@@ -9,7 +9,7 @@
 ; ============================================================================
 
 #define MyAppName "ESPECTRA"
-#define MyAppVersion "1.0.22"
+#define MyAppVersion "1.0.23"
 #define MyAppPublisher "Ing. Abel Max Julcarima Espíritu"
 #define MyAppExeName "ESPECTRA.exe"
 

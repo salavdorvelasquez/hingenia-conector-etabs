@@ -35,7 +35,7 @@ PORT = 8731
 
 # Version de ESPECTRA. Debe coincidir con MyAppVersion de installer/espectra.iss
 # y con el tag vX.Y.Z que dispara el release en GitHub Actions.
-APP_VERSION = "1.0.22"
+APP_VERSION = "1.0.23"
 
 # De aqui se leen las versiones publicadas para avisar de actualizaciones.
 GITHUB_REPO = "salavdorvelasquez/hingenia-conector-etabs"
@@ -1584,18 +1584,24 @@ def irregularidad_torsion(limite=0.007):
 def irregularidad_rigidez():
     """Rigidez de entrepiso por direccion: K = V / delta.
 
-    V es el cortante del entrepiso (Story Forces, en la base del piso) y delta
-    el desplazamiento relativo del entrepiso, que es lo que da la columna Avg
-    de 'Story Max Over Avg Drifts' (esa tabla devuelve desplazamientos, no
-    cocientes). Se usa Avg y no Max porque Max lo infla la torsion y un piso
-    excentrico pareceria blando sin serlo.
+    V es el cortante en la BASE del entrepiso (Story Forces, Location =
+    Bottom) y delta su desplazamiento relativo, que sale de la columna
+    'Avg Drift' de 'Story Max Over Avg Drifts' multiplicada por la altura del
+    entrepiso: esa columna trae la deriva (Delta/h), no el desplazamiento. Sin
+    esa multiplicacion los pisos de distinta altura no son comparables, y en un
+    edificio con el primer nivel mas alto el error llega a ser del 50 %.
 
-    Se leen las cuatro combinaciones de deriva D-, y por direccion se toma en
-    cada entrepiso la K menor de sus dos combinaciones: la mas desfavorable.
+    Se usa Avg y no Max porque Max lo infla la torsion y un piso excentrico
+    pareceria blando sin serlo.
+
+    Los cuatro casos son los espectrales con excentricidad accidental, que son
+    los mismos que hay detras de las combinaciones D- de derivas. Se leen estos
+    y no las D- porque las combinaciones no aparecen en Story Forces, y el
+    factor 0.75 / 0.85 de las D- se simplifica al dividir V entre delta.
 
     Criterio E.030, comparando cada entrepiso con los de arriba:
-      - Piso blando   (Tabla N 11, Ia = 0.75): K < 0.70 K_sup  o  K < 0.80 prom(3 sup).
-      - Extrema       (Tabla N 13, Ia = 0.50): K < 0.60 K_sup  o  K < 0.70 prom(3 sup).
+      - Piso blando (Tabla N 11, Ia = 0.75): K < 0.70 K_sup  o  K < 0.80 prom(3 sup).
+      - Extrema     (Tabla N 13, Ia = 0.50): K < 0.60 K_sup  o  K < 0.70 prom(3 sup).
     """
     SapModel, err = get_sapmodel()
     if err:
@@ -1610,11 +1616,10 @@ def irregularidad_rigidez():
         except Exception:
             pass
 
-        combos = [("D-SDXMasaY+", "X"), ("D-SDXMasaY-", "X"),
-                  ("D-SDYMasaX+", "Y"), ("D-SDYMasaX-", "Y")]
+        casos = [("(ZUCS g) SDXMasaY+", "X"), ("(ZUCS g) SDXMasaY-", "X"),
+                 ("(ZUCS g) SDYMasaX+", "Y"), ("(ZUCS g) SDYMasaX-", "Y")]
         try:
-            SapModel.DatabaseTables.SetLoadCombinationsSelectedForDisplay(
-                [c for c, _ in combos])
+            SapModel.DatabaseTables.SetLoadCasesSelectedForDisplay([c for c, _ in casos])
         except Exception:
             pass
 
@@ -1623,64 +1628,62 @@ def irregularidad_rigidez():
         _, sdef = _leer_tabla(SapModel, "Story Definitions")
         if not forces or not drifts:
             return {"ok": False, "mensaje": "Faltan las tablas Story Forces o Story Max Over "
-                    "Avg Drifts. Corre el modelo y comprueba que existan las combinaciones "
-                    "D-SDXMasaY+ / D-SDYMasaX+."}
+                    "Avg Drifts. Corre el modelo y vuelve a intentarlo."}
 
         # Story Definitions viene del techo hacia abajo y no trae la base.
-        orden = []
+        orden, alturas = [], {}
         for r in sdef:
             st = r.get("Story")
             if st and st not in orden:
                 orden.append(st)
+                alturas[st] = _abs_num(r.get("Height"))
 
-        # V por (combo, story). ETABS repite cada fila con StepType Max y Min y
-        # da el cortante arriba y abajo del piso: se queda el mayor valor.
+        # Cortante en la base de cada entrepiso. ETABS da Top y Bottom y repite
+        # cada fila con StepType Max y Min: se queda el mayor de los Bottom.
         V = {}
         for r in forces:
-            caso = r.get("OutputCase")
-            st = r.get("Story")
+            if str(r.get("Location") or "").strip() != "Bottom":
+                continue
+            caso, st = r.get("OutputCase"), r.get("Story")
             if not caso or not st:
                 continue
             for direccion, comp in (("X", "VX"), ("Y", "VY")):
                 v = _abs_num(r.get(comp))
-                clave = (caso, direccion, st)
-                if v > V.get(clave, 0.0):
-                    V[clave] = v
+                if v > V.get((caso, direccion, st), 0.0):
+                    V[(caso, direccion, st)] = v
 
-        # delta por (combo, direccion, story), con el mayor Avg de las filas
-        # repetidas. Direction llega como "X"/"Y" o como "Diaph D1 X".
-        D, DMAX = {}, {}
+        # Deriva media y maxima por entrepiso.
+        DAVG, DMAX = {}, {}
         for r in drifts:
-            caso = r.get("OutputCase")
-            st = r.get("Story")
-            dd = str(r.get("Direction") or "").strip()
-            if not caso or not st or not dd:
+            caso, st = r.get("OutputCase"), r.get("Story")
+            dd = str(r.get("Direction") or "").strip().upper()
+            if not caso or not st or not dd or dd[-1] not in ("X", "Y"):
                 continue
-            direccion = dd[-1].upper()
-            if direccion not in ("X", "Y"):
-                continue
-            clave = (caso, direccion, st)
-            a = _abs_num(r.get("Avg"))
-            m = _abs_num(r.get("Max"))
-            if a > D.get(clave, 0.0):
-                D[clave] = a
+            clave = (caso, dd[-1], st)
+            a = _abs_num(r.get("Avg Drift"))
+            m = _abs_num(r.get("Max Drift"))
+            if a > DAVG.get(clave, 0.0):
+                DAVG[clave] = a
             if m > DMAX.get(clave, 0.0):
                 DMAX[clave] = m
 
         def por_direccion(direccion):
-            casos = [c for c, d in combos if d == direccion]
+            propios = [c for c, d in casos if d == direccion]
             filas = []
             for st in orden:
+                h = alturas.get(st, 0.0)
                 mejor = None
-                for c in casos:
-                    v, delta = V.get((c, direccion, st)), D.get((c, direccion, st))
-                    if not v or not delta:
+                for c in propios:
+                    v, dr = V.get((c, direccion, st)), DAVG.get((c, direccion, st))
+                    if not v or not dr or h <= 0:
                         continue
+                    delta = dr * h
                     k = v / delta
                     # La mas desfavorable es la de menor rigidez.
                     if mejor is None or k < mejor["K"]:
-                        mejor = {"story": st, "caso": c, "V": v, "delta": delta,
-                                 "dmax": DMAX.get((c, direccion, st)) or 0.0, "K": k}
+                        mejor = {"story": st, "caso": c, "V": v, "deriva": dr,
+                                 "delta": delta, "K": k,
+                                 "dmax": DMAX.get((c, direccion, st)) or 0.0}
                 if mejor:
                     filas.append(mejor)
 
@@ -1711,7 +1714,8 @@ def irregularidad_rigidez():
                         estado = "OK"
                 salida.append({
                     "story": f["story"], "caso": f["caso"],
-                    "v": round(f["V"], 2), "delta": round(f["delta"], 6),
+                    "v": round(f["V"], 2), "h": round(alturas.get(f["story"], 0.0), 2),
+                    "deriva": round(f["deriva"], 6), "delta": round(f["delta"], 5),
                     "dmax": round(f["dmax"], 6), "k": round(f["K"], 1),
                     "rsup": round(rsup, 3) if rsup is not None else None,
                     "rprom": round(rprom, 3) if rprom is not None else None,
@@ -1722,9 +1726,11 @@ def irregularidad_rigidez():
 
         dirs = [por_direccion("X"), por_direccion("Y")]
         if not any(d["filas"] for d in dirs):
-            return {"ok": False, "mensaje": "No se pudo emparejar el cortante con el "
-                    "desplazamiento de ningun entrepiso. Revisa que las combinaciones D- "
-                    "esten en el modelo y que tenga diafragma."}
+            vistos = sorted({str(r.get("OutputCase")) for r in drifts})[:12]
+            return {"ok": False, "mensaje": "No se encontraron los casos "
+                    "(ZUCS g) SDXMasaY+ / SDYMasaX+ en las tablas de resultados. "
+                    "Casos disponibles: %s. Vuelve a Datos y pulsa Cargar para "
+                    "regenerarlos." % ", ".join(vistos)}
 
         extrema = any(d["extrema"] for d in dirs)
         irregular = any(d["irregular"] for d in dirs)
