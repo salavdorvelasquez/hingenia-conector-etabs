@@ -35,7 +35,7 @@ PORT = 8731
 
 # Version de ESPECTRA. Debe coincidir con MyAppVersion de installer/espectra.iss
 # y con el tag vX.Y.Z que dispara el release en GitHub Actions.
-APP_VERSION = "1.0.39"
+APP_VERSION = "1.0.40"
 
 # De aqui se leen las versiones publicadas para avisar de actualizaciones.
 GITHUB_REPO = "salavdorvelasquez/hingenia-conector-etabs"
@@ -1329,7 +1329,7 @@ def escalamiento(p):
             return (periodo(caso_modal, comp) or periodo("Modal", comp)
                     or periodo(None, comp))
 
-        # Peso sísmico y cortante dinámico BASE (de los casos elásticos /R → idempotente)
+        # Peso sismico y cortante dinamico en la base.
         _, base = _leer_tabla(SapModel, "Base Reactions")
 
         def reac(c, comp):
@@ -1343,9 +1343,20 @@ def escalamiento(p):
 
         frac = 0.8 if regular else 0.9
 
-        # Un combo, un caso modal, un periodo, su C y su V estatica. La V
-        # dinamica sale del caso elastico /R, que es idempotente: volver a
-        # escalar no cambia el resultado.
+        # Un combo, un caso modal, un periodo, su C y su V estatica.
+        #
+        # La V dinamica se lee del PROPIO combo de diseño, que es lo que el
+        # usuario ve en ETABS (Show Tables > Story Forces, en la base) y lo que
+        # lleva a su memoria. Antes se leia el caso elastico "(ZUCS g) ..."
+        # dividido entre R: eso era idempotente -volver a escalar no cambiaba el
+        # resultado- pero daba un numero que no aparece en ninguna tabla de
+        # ETABS y que ademas ignora el 30 % de la direccion ortogonal que si
+        # lleva el combo. En un caso real daba 11.43 donde ETABS decia 13.3401.
+        #
+        # El precio es que ya no es idempotente: si los factores llegan a
+        # aplicarse al modelo, esta lectura devuelve la cortante ya escalada y
+        # un segundo calculo daria f = 1. Hay que releer siempre con los combos
+        # sin escalar.
         COMBOS = [
             ("SDXMasaY+", "X", "ModalMasaY+", "UX", "FX", rx),
             ("SDXMasaY-", "X", "ModalMasaY-", "UX", "FX", rx),
@@ -1358,7 +1369,7 @@ def escalamiento(p):
             # Art. 18.3: para la cortante estatica, C = 2.5 en todo 0 <= T <= Tp.
             c = _factor_c_estatico(t, Tp, Tl)
             vest = Z * U * c * S / R * peso
-            vd = reac("(ZUCS g) " + nombre, comp_f) / R
+            vd = reac(nombre, comp_f)
             f = max(1.0, (frac * vest / vd) if vd else 1.0)
             f_de[nombre] = f
             casos.append({"caso": nombre, "dir": d, "T": round(t, 3), "C": round(c, 3),
