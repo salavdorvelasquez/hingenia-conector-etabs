@@ -35,7 +35,7 @@ PORT = 8731
 
 # Version de ESPECTRA. Debe coincidir con MyAppVersion de installer/espectra.iss
 # y con el tag vX.Y.Z que dispara el release en GitHub Actions.
-APP_VERSION = "1.0.37"
+APP_VERSION = "1.0.38"
 
 # De aqui se leen las versiones publicadas para avisar de actualizaciones.
 GITHUB_REPO = "salavdorvelasquez/hingenia-conector-etabs"
@@ -930,43 +930,27 @@ def derivas():
             return {"ok": False, "mensaje": NO_ANALIZADO}
         reuso = True
 
-        # "Story Drifts" NO desglosa por direccion: da una fila por nivel y caso
-        # con la deriva del punto que gobierna, y su columna Direction dice en
-        # que direccion salio esa deriva. En los combos 100%+30% de la direccion
-        # rigida el maximo cae en la direccion ortogonal -el 30 % de la
-        # direccion flexible pesa mas que el 100 % de la propia-, asi que
-        # filtrar por Direction=="Y" no encontraba ninguna fila y la seccion
-        # salia vacia. Pasaba igual en X si el modelo era flexible en Y.
-        #
-        # "Joint Drifts" trae DriftX y DriftY por junta para ese mismo combo: la
-        # deriva sigue saliendo de la combinacion, sin recalcular nada, y ya con
-        # su direccion. En la direccion que hoy funciona los valores salen
-        # identicos a los de "Story Drifts".
-        _, drifts = _leer_tabla(SapModel, "Joint Drifts")
+        _, drifts = _leer_tabla(SapModel, "Story Drifts")
 
-        # Cota de cada nivel para ordenar el perfil de arriba abajo: "Joint
-        # Drifts" no trae la columna Z que si tenia "Story Drifts". Si la API no
-        # da la cota, vale el orden en que ETABS lista los niveles.
-        try:
-            nombres_niveles = list(SapModel.Story.GetNameList()[1])
-        except Exception:
-            nombres_niveles = []
-        cota = {}
-        for i, s in enumerate(nombres_niveles):
-            try:
-                cota[s] = float(SapModel.Story.GetElevation(s)[0])
-            except Exception:
-                cota[s] = float(len(nombres_niveles) - i)
-
+        # No se filtra por Direction. Esa columna no es un eje de la tabla: para
+        # un combo ETABS da una fila por nivel con la deriva del punto que
+        # gobierna, y Direction solo dice en que direccion salio. Filtrarla
+        # dejaba vacia la direccion rigida -en el combo 100%+30% de esa
+        # direccion el maximo cae en la ortogonal- y no hay razon para
+        # descartarla: la combinacion representa la accion simultanea, su
+        # deriva maxima es la demanda, y el limite de la Tabla N 14 es del
+        # material, el mismo para las dos direcciones. Asi salen los mismos
+        # numeros que ensena ETABS en Story Drifts, que es lo que el usuario
+        # lleva a la memoria.
         def perfil(caso, direccion):  # [{story, drift}] de arriba (techo) a abajo (base)
-            col = "Drift" + direccion          # DriftX / DriftY
-            por_story = {}
+            por_story, z = {}, {}
             for r in drifts:
                 if r.get("OutputCase") != caso:
                     continue
                 s = r.get("Story")
-                por_story[s] = max(por_story.get(s, 0.0), _abs_num(r.get(col)))
-            items = sorted(por_story.items(), key=lambda kv: cota.get(kv[0], 0.0), reverse=True)
+                por_story[s] = max(por_story.get(s, 0.0), _abs_num(r.get("Drift")))
+                z[s] = _abs_num(r.get("Z"))
+            items = sorted(por_story.items(), key=lambda kv: z.get(kv[0], 0.0), reverse=True)
             return [{"story": s, "drift": round(d, 6)} for s, d in items]
 
         resultado, sin_datos = [], True
