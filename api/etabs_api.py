@@ -35,7 +35,7 @@ PORT = 8731
 
 # Version de ESPECTRA. Debe coincidir con MyAppVersion de installer/espectra.iss
 # y con el tag vX.Y.Z que dispara el release en GitHub Actions.
-APP_VERSION = "1.0.38"
+APP_VERSION = "1.0.39"
 
 # De aqui se leen las versiones publicadas para avisar de actualizaciones.
 GITHUB_REPO = "salavdorvelasquez/hingenia-conector-etabs"
@@ -616,6 +616,20 @@ def _inventario_muros(SapModel):
     for r in materiales:
         tipo_de_material[r.get("Material")] = str(r.get("Type") or "").strip().lower()
 
+    # La albanileria se define en ETABS como "Masonry" o como "Other": el tipo
+    # Masonry es limitado y en los modelos reales se usa igual de a menudo un
+    # material "Other" (ALB65, M12.5-ALB65...). Aceptando solo Masonry, esos
+    # muros caian en "otros", la direccion se quedaba sin albanileria y el
+    # sistema salia de porticos con R0 = 8 en vez del R0 = 3 del Art. 22.2.
+    #
+    # Un muro es de concreto o es de albanileria: lo que no sea Concrete ni un
+    # material estructural con tipo propio (Steel, Aluminum, Cold Formed) se
+    # cuenta como albanileria. El sesgo es deliberado: pasarse detectandola da
+    # un R0 menor y es conservador; no detectarla deja a la estructura con un
+    # R0 que no le corresponde.
+    TIPOS_ALB = ("masonry", "other", "")
+    TIPOS_NO_MURO = ("steel", "aluminum", "cold formed", "rebar", "tendon")
+
     familia_de_seccion = {}
     for r in secciones:
         if str(r.get("Type") or "").strip().lower() != "wall":
@@ -623,10 +637,12 @@ def _inventario_muros(SapModel):
         t = tipo_de_material.get(r.get("Material"), "")
         if t == "concrete":
             fam = "concreto"
-        elif t == "masonry":
+        elif t in TIPOS_ALB:
             fam = "albanileria"
-        else:
+        elif t in TIPOS_NO_MURO:
             fam = "otros"
+        else:
+            fam = "albanileria"
         familia_de_seccion[r.get("Name")] = (fam, r.get("Material"))
 
     for r in areas:
