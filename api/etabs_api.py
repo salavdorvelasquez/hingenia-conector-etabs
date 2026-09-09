@@ -35,7 +35,7 @@ PORT = 8731
 
 # Version de ESPECTRA. Debe coincidir con MyAppVersion de installer/espectra.iss
 # y con el tag vX.Y.Z que dispara el release en GitHub Actions.
-APP_VERSION = "1.0.40"
+APP_VERSION = "1.0.41"
 
 # De aqui se leen las versiones publicadas para avisar de actualizaciones.
 GITHUB_REPO = "salavdorvelasquez/hingenia-conector-etabs"
@@ -1172,12 +1172,18 @@ def memoria(uso=None):
         # Derivas máximas por dirección (combos D-)
         _, drifts = _leer_tabla(SapModel, "Story Drifts")
 
-        def drift_max(lista, direccion):
+        # Sin filtrar por Direction, igual que en derivas(): esa columna no es un
+        # eje de la tabla -para un combo ETABS da una fila por nivel con la
+        # deriva del punto que gobierna, y Direction solo dice en que direccion
+        # salio-. Filtrandola, la direccion rigida se quedaba en cero porque en
+        # su combo 100%+30% el maximo cae en la ortogonal: aqui daba drift_y = 0
+        # y la memoria enseñaba una distorsion nula en Y.
+        def drift_max(lista):
             return max([_abs_num(r.get("Drift")) for r in drifts
-                        if r.get("OutputCase") in lista and r.get("Direction") == direccion] or [0.0])
+                        if r.get("OutputCase") in lista] or [0.0])
 
-        dx = drift_max(["D-SDXMasaY+", "D-SDXMasaY-"], "X")
-        dy = drift_max(["D-SDYMasaX+", "D-SDYMasaX-"], "Y")
+        dx = drift_max(["D-SDXMasaY+", "D-SDXMasaY-"])
+        dy = drift_max(["D-SDYMasaX+", "D-SDYMasaX-"])
 
         origen = "resultados existentes" if reuso else "análisis ejecutado"
         return {"ok": True,
